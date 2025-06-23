@@ -1,0 +1,7 @@
+discord.py>=2.3.2
+python-dotenv
+aiohttp
+requests
+beautifulsoup4
+pyopenjtalk
+soundfile
