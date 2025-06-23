@@ -50,7 +50,7 @@ pip install -r requirements.txt
 bash
 コピーする
 編集する
-pip install discord.py python-dotenv aiohttp beautifulsoup4 pyopenjtalk soundfile
+pip install -r requirements.txt
 2. .envファイルを作成
 プロジェクトのルートに .env を作って下記を記述：
 
