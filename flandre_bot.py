@@ -137,7 +137,7 @@ async def ping(interaction: discord.Interaction):
 @bot.tree.command(name="info", description="ふらんちゃんの情報を教えるよ♡")
 async def info(interaction: discord.Interaction):
     embed = discord.Embed(title="ふらんちゃんBotの情報", description="ふらんちゃんはかわいいよ♡", color=0xFF69B4)
-    embed.add_field(name="バージョン", value="3.3.47", inline=False)
+    embed.add_field(name="バージョン", value="4.0.0", inline=False)
     embed.add_field(name="開発者", value="けんすけ", inline=False)
     await interaction.response.send_message(embed=embed)
 
