@@ -84,6 +84,7 @@ bot = FranBot()
 
 # GIFコマンド！！
 
+# GIFコマンド！！ ここから下を追加・確認してね！
 @bot.tree.command(name="gif", description="キーワードでTenorのGIFを検索するよ！")
 @app_commands.describe(keyword="検索したいキーワードを入れてね！")
 async def gif(interaction: discord.Interaction, keyword: str):
