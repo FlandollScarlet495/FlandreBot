@@ -11,6 +11,7 @@
     {"name": "/time", "description": "ふらんちゃんが今の時間をいろんな形で教えるよ♡"},
     {"name": "/random_image", "description": "ふらんちゃんがランダムな画像を送るよ♡"},
     {"name": "/random_gif", "description": "ふらんちゃんがランダムなGIFを送るよ♡"},
+    {"name": "/gif", "description": "ふらんちゃんが送ったキーワードを調べてGIFを送るよ♡"},
     {"name": "/random_video", "description": "ふらんちゃんがランダムな動画を送るよ♡"},
     {"name": "/random_music", "description": "ふらんちゃんがランダムな音楽を送るよ♡"},
     {"name": "/luckycolor", "description": "今日のラッキーカラーを教えるよ♡"},

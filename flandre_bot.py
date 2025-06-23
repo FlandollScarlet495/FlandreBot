@@ -40,6 +40,7 @@ load_dotenv() # .envを読み込むよ！
 GUILD_ID = int(os.getenv("GUILD_ID"))
 CONSOLE_OUTPUT_CHANNEL_ID = int(os.getenv("CONSOLE_OUTPUT_CHANNEL_ID"))
 GUILD_ID = int(os.getenv("GUILD_ID", "0"))
+TENOR_API_KEY = os.getenv('TENOR_API_KEY')
 
 intents = discord.Intents.default()
 intents.members = True  # メンバー情報を取るために必須！
@@ -80,6 +81,29 @@ class FranBot(commands.Bot):
         await self.process_commands(message)
 
 bot = FranBot()
+
+# GIFコマンド！！
+
+@bot.tree.command(name="gif", description="キーワードでTenorのGIFを検索するよ！")
+@app_commands.describe(keyword="検索したいキーワードを入れてね！")
+async def gif(interaction: discord.Interaction, keyword: str):
+    if not TENOR_API_KEY:
+        await interaction.response.send_message("ごめんね、Tenor APIキーが設定されてないからGIFを検索できないの…！💦", ephemeral=True)
+        return
+
+    url = f"https://g.tenor.com/v1/search?q={keyword}&key={TENOR_API_KEY}&limit=1"
+    
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as response:
+            if response.status == 200:
+                data = await response.json()
+                if data and data['results']:
+                    gif_url = data['results'][0]['media'][0]['gif']['url']
+                    await interaction.response.send_message(gif_url)
+                else:
+                    await interaction.response.send_message(f"「{keyword}」のGIFは見つからなかったよ…ごめんね！😢")
+            else:
+                await interaction.response.send_message(f"うぅ、Tenor APIとの通信でエラーが出ちゃったの…！(エラーコード: {response.status})")
 
 # ふらんちゃんのあいさつコマンド
 
@@ -775,7 +799,6 @@ async def quote(interaction: discord.Interaction):
 @bot.tree.command(name="urban", description="英単語の意味を調べるよ（Urban Dictionary風）")
 @app_commands.describe(term="調べたい英単語")
 async def urban(interaction: discord.Interaction, term: str):
-    import aiohttp
     url = f"https://api.urbandictionary.com/v0/define?term={term}"
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as resp:
@@ -790,7 +813,6 @@ async def urban(interaction: discord.Interaction, term: str):
 @bot.tree.command(name="shorten", description="URLを短縮するよ♡")
 @app_commands.describe(url="短縮したいURLを入力してね")
 async def shorten(interaction: discord.Interaction, url: str):
-    import aiohttp
     api = f"https://is.gd/create.php?format=simple&url={url}"
     async with aiohttp.ClientSession() as session:
         async with session.get(api) as resp:
@@ -817,7 +839,6 @@ async def weatherjp(interaction: discord.Interaction, city: str):
             ephemeral=True
         )
         return
-    import aiohttp
     url = f"https://weather.tsukumijima.net/api/forecast/city/{city_id}"
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as resp:
@@ -883,7 +904,6 @@ async def math(interaction: discord.Interaction, expression: str):
 # 3. /cat - ランダム猫画像
 @bot.tree.command(name="cat", description="ランダムな猫の画像を送るよ♡")
 async def cat(interaction: discord.Interaction):
-    import aiohttp
     url = "https://api.thecatapi.com/v1/images/search"
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as resp:
@@ -895,7 +915,6 @@ async def cat(interaction: discord.Interaction):
 @bot.tree.command(name="translate", description="英語⇔日本語を翻訳するよ♡")
 @app_commands.describe(text="翻訳したい文章", target="翻訳先言語（ja/en）")
 async def translate(interaction: discord.Interaction, text: str, target: str):
-    import aiohttp
     if target not in ("ja", "en"):
         await interaction.response.send_message("ja か en を指定してね！", ephemeral=True)
         return
