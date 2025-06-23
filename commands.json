@@ -1,0 +1,54 @@
+{
+  "commands": [
+    {
+      "name": "/say",
+      "aliases": ["/speak", "/talk", "/say", "say", "speak", "talk"],
+      "usage": "/say <message>",
+      "description": "Botに喋らせるよ",
+      "type": "say"
+    },
+    {
+      "name": "/ping",
+      "aliases": ["/pong", "/test", "/ping", "ping", "pong", "test"],
+      "usage": "/ping",
+      "description": "Pong! を返すよ",
+      "type": "ping",
+      "response": "Pong!"
+    },
+    {
+      "name": "/help",
+      "aliases": ["/commands", "/command", "/help", "help", "commands", "command"],
+      "usage": "/help",
+      "description": "このヘルプを表示するよ",
+      "type": "help"
+    },
+    {
+      "name": "/shutdown",
+      "aliases": ["/stop", "/exit", "shutdown", "/shutdown", "stop", "exit"],
+      "usage": "/shutdown",
+      "description": "Botを終了するよ",
+      "type": "shutdown"
+    },
+    {
+      "name": "/sync_global",
+      "aliases": ["/syncg", "/global_sync", "/sync_global", "sync_global", "syncg", "global_sync", "sync_global"],
+      "usage": "/sync_global",
+      "description": "スラッシュコマンドをグローバルに同期するよ",
+      "type": "sync_global"
+    },
+    {
+      "name": "/sync_guild",
+      "aliases": ["/syncguild", "/guild_sync", "/sync_guild", "sync_guild", "syncguild", "guild_sync", "sync_guild"],
+      "usage": "/sync_guild",
+      "description": "スラッシュコマンドをギルドに同期するよ",
+      "type": "sync_guild"
+    },
+    {
+      "name": "/restart",
+      "aliases": ["reboot", "restart", "relaunch", "reset", "/reboot", "/restart", "/relaunch", "/reset"],
+      "usage": "/restart",
+      "description": "Botを再起動するよ",
+      "type": "restart"
+    }
+  ]
+}
