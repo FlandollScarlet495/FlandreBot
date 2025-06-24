@@ -49,6 +49,13 @@
       "usage": "/restart",
       "description": "Botを再起動するよ",
       "type": "restart"
+    },
+    {
+      "name": "/hello",
+      "aliases": ["/hello", "hello", "/Flandre", "/flandre", "Flandre", "flandre", "/fran", "/Fran", "fran", "Fran"],
+      "usage": "/hello",
+      "description": "ふらんちゃんがあいさつするよ？",
+      "type": "hello" 
     }
   ]
 }
