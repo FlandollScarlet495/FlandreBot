@@ -30,17 +30,22 @@ with open("helps.json", "r", encoding="utf-8") as f:
 COMMANDS_INFO = [(cmd["name"], cmd["description"]) for cmd in data["helps"]]
 
 # 環境変数の読み込み
-# .envファイルからDiscordのトークンやオーナーIDを読み込み
-# .envファイルは、Botの設定情報を安全に管理するために使用されます
-# dotenvは、環境変数を簡単に管理するためのライブラリです
-# これにより、コード内に機密情報をハードコーディングすることなく、設定を行うことができます
-
-load_dotenv() # .envを読み込むよ！
-# 環境変数から文字列で取得するから、intに変換するの忘れないでね
-GUILD_ID = int(os.getenv("GUILD_ID"))
-CONSOLE_OUTPUT_CHANNEL_ID = int(os.getenv("CONSOLE_OUTPUT_CHANNEL_ID"))
+# GUILD_IDは数字だからint()で変換するのはOKだよ！
+# もしGUILD_IDが設定されてなかったら、デフォルトで0にするよ。
 GUILD_ID = int(os.getenv("GUILD_ID", "0"))
-TENOR_API_KEY = os.getenv('TENOR_API_KEY')
+
+# Tenor APIキーは文字列だからint()は付けないよ！
+TENOR_API_KEY = os.getenv("TENOR_API_KEY")
+
+# 新しく追加するCONSOL_OUTPUT_CHANNEL_IDだよ！
+# これは数字だからint()で変換するけど、もし.envに設定されてなかったら警告を出すよ。
+CONSOLE_OUTPUT_CHANNEL_ID = os.getenv("CONSOLE_OUTPUT_CHANNEL_ID")
+if CONSOLE_OUTPUT_CHANNEL_ID:
+    CONSOLE_OUTPUT_CHANNEL_ID = int(CONSOLE_OUTPUT_CHANNEL_ID)
+else:
+    print("⚠️ CONSOLE_OUTPUT_CHANNEL_IDが.envに設定されていません！コンソールからのメッセージ送信ができないかも…！")
+    CONSOLE_OUTPUT_CHANNEL_ID = None # 設定されていなければNoneにしておくね
+
 
 intents = discord.Intents.default()
 intents.members = True  # メンバー情報を取るために必須！
@@ -1372,43 +1377,47 @@ def console_loop():
             show_help()
 
         elif cmd_type == "say":
+            if SEND_CHANNEL_ID is None:
+                print("❌ ごめんね、SEND_CHANNEL_IDが設定されてないからメッセージを送れないの…！.envファイルを確認してね。")
+                continue
+
             title = input("🖼️ タイトルを入力してね > ") or cmd_data.get("embed_title", "📢 お知らせ")
             message = input("💬 メッセージを入力してね > ")
-            channel_id_str = input("💬 メッセージを送りたいチャンネルのIDを入力してね > ") # ★チャンネルIDを聞くよ！
 
-            # チャンネルIDを数字に変換するよ
-            try:
-                channel_id = int(channel_id_str)
-            except ValueError:
-                print("❌ ごめんね、チャンネルIDは数字じゃないとダメなんだよ！")
-                continue # 次の入力待ちへ
-
-            print(f"\n📦 Embed形式：\n【{title}】\n{message}\nチャンネルID: {channel_id}") # 確認用に表示
+            print(f"\n📦 Embed形式：\n【{title}】\n{message}\nチャンネルID: {SEND_CHANNEL_ID}") # 確認用に表示
 
             # Discordにメッセージを送る非同期関数を作るよ
             async def _send_message_to_discord():
                 try:
                     # チャンネルを見つけるよ (まずキャッシュから、なければAPIから)
-                    channel = bot.get_channel(channel_id)
+                    channel = bot.get_channel(SEND_CHANNEL_ID) # ★ここで新しいSEND_CHANNEL_IDを使うよ！
                     if not channel:
-                        channel = await bot.fetch_channel(channel_id)
+                        channel = await bot.fetch_channel(SEND_CHANNEL_ID) # ★ここも！
 
                     if channel:
-                        # Discordの埋め込みメッセージ（Embed）を作るよ
                         embed = discord.Embed(
                             title=title,
                             description=message,
-                            color=0x992d22 # ふらんちゃんの色（赤）っぽい色だよ♡
+                            color=0x992d22
                         )
-                        await channel.send(embed=embed) # 埋め込みメッセージを送るよ
+                        await channel.send(embed=embed)
                         print(f"✅ メッセージをチャンネル '{channel.name}' (ID: {channel.id}) に送ったよ！")
                     else:
-                        print(f"❌ ごめんね、チャンネルID '{channel_id}' が見つからなかったよ…！")
+                        print(f"❌ ごめんね、SEND_CHANNEL_ID ({SEND_CHANNEL_ID}) のチャンネルが見つからなかったよ…！")
                 except discord.Forbidden:
-                    print(f"❌ ごめんね、チャンネル '{channel_id}' にメッセージを送る権限がないよ…！")
+                    print(f"❌ ごめんね、チャンネル '{SEND_CHANNEL_ID}' にメッセージを送る権限がないよ…！")
                 except Exception as e:
                     print(f"❌ Discordへのメッセージ送信中にエラーが出ちゃったよ…！: {e}")
                     traceback.print_exc()
+
+            fut = asyncio.run_coroutine_threadsafe(_send_message_to_discord(), bot.loop)
+            try:
+                fut.result(30)
+            except TimeoutError:
+                print("⚠️ メッセージ送信がタイムアウトしちゃったよ…！")
+            except Exception as e:
+                print(f"❌ メッセージ送信の処理中にエラーが発生しちゃったよ…！: {e}")
+                traceback.print_exc()
 
             # 非同期のメッセージ送信処理を、コンソールループのスレッドから実行するよ
             fut = asyncio.run_coroutine_threadsafe(_send_message_to_discord(), bot.loop)
