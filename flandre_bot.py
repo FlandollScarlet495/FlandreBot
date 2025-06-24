@@ -162,7 +162,7 @@ async def ping(interaction: discord.Interaction):
 @bot.tree.command(name="info", description="ふらんちゃんの情報を教えるよ♡")
 async def info(interaction: discord.Interaction):
     embed = discord.Embed(title="ふらんちゃんBotの情報", description="ふらんちゃんはかわいいよ♡", color=0xFF69B4)
-    embed.add_field(name="バージョン", value="4.3.0", inline=False)
+    embed.add_field(name="バージョン", value="4.5.0", inline=False)
     embed.add_field(name="開発者", value="けんすけ", inline=False)
     await interaction.response.send_message(embed=embed)
 
@@ -1114,16 +1114,32 @@ for cmd in COMMANDS_JSON:
     for alias in [cmd["name"]] + cmd.get("aliases", []):
         COMMAND_ALIASES[alias.lstrip("/")] = cmd
 
-for alias in [a for a in COMMAND_ALIASES if COMMAND_ALIASES[a]["type"] == "shutdown" and a != "shutdown"]:
-    if alias != "shutdown":
-        async def alias_shutdown(interaction: discord.Interaction):
-            await shutdown_cmd(interaction)
-        bot.tree.command(name=alias, description="Botを終了するよ")(alias_shutdown)
+async def _sync_commands_logic(interaction: discord.Interaction, sync_type: str):
+    """スラッシュコマンドの同期を行う内部関数だよ！"""
+    try:
+        if sync_type == "global":
+            await interaction.client.tree.sync() # botじゃなくてinteraction.clientを使うよ
+            await interaction.response.send_message("✅ スラッシュコマンドを全体に同期したよっ！", ephemeral=True)
+            print("✅ スラッシュコマンドを全体に同期したよ〜！（グローバル）")
+        elif sync_type == "guild":
+            # ギルドIDが必要になるから、ここでは例としてguild_idを仮定するよ
+            # 実際のギルドIDをinteraction.guild.idなどで取得して使うか、引数で渡してね
+            if interaction.guild:
+                await interaction.client.tree.sync(guild=interaction.guild)
+                await interaction.response.send_message(f"✅ このサーバーにスラッシュコマンドを同期したよっ！", ephemeral=True)
+                print(f"✅ スラッシュコマンドをギルド '{interaction.guild.name}' に同期したよ〜！")
+            else:
+                await interaction.response.send_message("ごめんね、サーバーでのみギルド同期はできるんだよ！", ephemeral=True)
+        else:
+            await interaction.response.send_message("ごめんね、同期の種類がわからなかったの…！", ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f"うぅ、スラッシュコマンドの同期に失敗しちゃったよ…！💦 エラー: {e}", ephemeral=True)
+        print(f"⚠️ スラッシュコマンドの同期に失敗したよ…: {e}")
 
-@bot.tree.command(name="sync_global", description="スラッシュコマンドをグローバルに同期するよ")
+# これが元の sync_global_cmd だった部分だよ！
+@bot.tree.command(name="sync_global", description="スラッシュコマンドをグローバルに同期するよ！")
 async def sync_global_cmd(interaction: discord.Interaction):
-    await bot.tree.sync()
-    await interaction.response.send_message("グローバルに同期しました！")
+    await _sync_commands_logic(interaction, "global")
 
 async def alias_command(interaction: discord.Interaction):
     # 最初に1回だけ送るならOK
@@ -1328,7 +1344,7 @@ def console_loop():
             print("🌐 グローバルコマンドを同期中…")
             try:
                 fut = asyncio.run_coroutine_threadsafe(bot.tree.sync(), bot.loop)
-                result = fut.result(10)
+                result = fut.result()
                 print(f"✅ 同期完了！{len(result)} 件のコマンド")
             except Exception as e:
                 print(f"❌ 同期エラー: {e}")
@@ -1338,9 +1354,9 @@ def console_loop():
             print("🏠 ギルドコマンドを同期中…")
             try:
                 fut = asyncio.run_coroutine_threadsafe(
-                    bot.tree.sync(guild=discord.Object(id=YOUR_GUILD_ID)), bot.loop
+                    bot.tree.sync(guild=discord.Object(id=GUILD_ID)), bot.loop
                 )
-                result = fut.result(10)
+                result = fut.result()
                 print(f"✅ ギルド同期完了！{len(result)} 件のコマンド")
             except Exception as e:
                 print(f"❌ 同期エラー: {e}")
@@ -1358,7 +1374,51 @@ def console_loop():
         elif cmd_type == "say":
             title = input("🖼️ タイトルを入力してね > ") or cmd_data.get("embed_title", "📢 お知らせ")
             message = input("💬 メッセージを入力してね > ")
-            print(f"\n📦 Embed形式：\n【{title}】\n{message}\n")
+            channel_id_str = input("💬 メッセージを送りたいチャンネルのIDを入力してね > ") # ★チャンネルIDを聞くよ！
+
+            # チャンネルIDを数字に変換するよ
+            try:
+                channel_id = int(channel_id_str)
+            except ValueError:
+                print("❌ ごめんね、チャンネルIDは数字じゃないとダメなんだよ！")
+                continue # 次の入力待ちへ
+
+            print(f"\n📦 Embed形式：\n【{title}】\n{message}\nチャンネルID: {channel_id}") # 確認用に表示
+
+            # Discordにメッセージを送る非同期関数を作るよ
+            async def _send_message_to_discord():
+                try:
+                    # チャンネルを見つけるよ (まずキャッシュから、なければAPIから)
+                    channel = bot.get_channel(channel_id)
+                    if not channel:
+                        channel = await bot.fetch_channel(channel_id)
+
+                    if channel:
+                        # Discordの埋め込みメッセージ（Embed）を作るよ
+                        embed = discord.Embed(
+                            title=title,
+                            description=message,
+                            color=0x992d22 # ふらんちゃんの色（赤）っぽい色だよ♡
+                        )
+                        await channel.send(embed=embed) # 埋め込みメッセージを送るよ
+                        print(f"✅ メッセージをチャンネル '{channel.name}' (ID: {channel.id}) に送ったよ！")
+                    else:
+                        print(f"❌ ごめんね、チャンネルID '{channel_id}' が見つからなかったよ…！")
+                except discord.Forbidden:
+                    print(f"❌ ごめんね、チャンネル '{channel_id}' にメッセージを送る権限がないよ…！")
+                except Exception as e:
+                    print(f"❌ Discordへのメッセージ送信中にエラーが出ちゃったよ…！: {e}")
+                    traceback.print_exc()
+
+            # 非同期のメッセージ送信処理を、コンソールループのスレッドから実行するよ
+            fut = asyncio.run_coroutine_threadsafe(_send_message_to_discord(), bot.loop)
+            try:
+                fut.result(30) # 最大30秒待つよ (必要なら時間を調整してね)
+            except TimeoutError:
+                print("⚠️ メッセージ送信がタイムアウトしちゃったよ…！")
+            except Exception as e:
+                print(f"❌ メッセージ送信の処理中にエラーが発生しちゃったよ…！: {e}")
+                traceback.print_exc()
 
         else:
             print(f"⚠️ 未対応のコマンドタイプ: {cmd_type}")
@@ -1383,12 +1443,17 @@ async def auto_restart_loop(interval_seconds=4 * 60 * 60):  # デフォルトは
     except Exception as e:
         print(f"❌ 自動再起動失敗: {e}")
         return
+    # ★ここから、on_ready関数をクラスの中に入れるんだよ！
+    async def on_ready(self): # ここに 'self' があるのがポイント！
+        print(f"✨ ふらんちゃんBotが起動したよっ！")
+        print(f"🎉 {self.user.name} としてログインしたよ♡") # self.user.nameでOK
+        self.loop.create_task(auto_restart_loop()) # self.loopを使うのがより安全だよ
 
-@bot.event
-async def on_ready():
-    print(f"🎉 {bot.user} としてログインしたよ♡")
-    bot.loop.create_task(auto_restart_loop())  # 自動再起動ループを開始するよ
+    async def on_message(self, message):
+        # ... (on_messageのコード) ...
+        await self.process_commands(message)
 
+# if __name__ == "__main__": の部分はそのまま！
 if __name__ == "__main__":
     threading.Thread(target=console_loop, daemon=True).start()
     TOKEN = os.getenv("DISCORD_TOKEN")
@@ -1400,4 +1465,3 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"Bot起動エラー: {e}")
         traceback.print_exc()
-    # ここにloop.close()は不要！
