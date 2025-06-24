@@ -1376,38 +1376,46 @@ def console_loop():
         elif cmd_type == "help":
             show_help()
 
-        elif cmd_type == "say":
-            if SEND_CHANNEL_ID is None:
-                print("❌ ごめんね、SEND_CHANNEL_IDが設定されてないからメッセージを送れないの…！.envファイルを確認してね。")
-                continue
+            elif cmd_type == "say":
+                # ここでCONSOLE_OUTPUT_CHANNEL_IDを使うよ！
+                if CONSOLE_OUTPUT_CHANNEL_ID is None:
+                    print("❌ ごめんね、CONSOLE_OUTPUT_CHANNEL_IDが設定されてないからメッセージを送れないの…！.envファイルを確認してね。")
+                    continue
 
-            title = input("🖼️ タイトルを入力してね > ") or cmd_data.get("embed_title", "📢 お知らせ")
-            message = input("💬 メッセージを入力してね > ")
+                title = input("🖼️ タイトルを入力してね > ") or cmd_data.get("embed_title", "📢 お知らせ")
+                message = input("💬 メッセージを入力してね > ")
 
-            print(f"\n📦 Embed形式：\n【{title}】\n{message}\nチャンネルID: {SEND_CHANNEL_ID}") # 確認用に表示
+                print(f"\n📦 Embed形式：\n【{title}】\n{message}\nチャンネルID: {CONSOLE_OUTPUT_CHANNEL_ID}") # 確認用に表示
 
-            # Discordにメッセージを送る非同期関数を作るよ
-            async def _send_message_to_discord():
+                async def _send_message_to_discord():
+                    try:
+                        channel = bot.get_channel(CONSOLE_OUTPUT_CHANNEL_ID) # ★ここをCONSOLE_OUTPUT_CHANNEL_IDに！
+                        if not channel:
+                            channel = await bot.fetch_channel(CONSOLE_OUTPUT_CHANNEL_ID) # ★ここも！
+
+                        if channel:
+                            embed = discord.Embed(
+                                title=title,
+                                description=message,
+                                color=0x992d22
+                            )
+                            await channel.send(embed=embed)
+                            print(f"✅ メッセージをチャンネル '{channel.name}' (ID: {channel.id}) に送ったよ！")
+                        else:
+                            print(f"❌ ごめんね、チャンネルID ({CONSOLE_OUTPUT_CHANNEL_ID}) のチャンネルが見つからなかったよ…！")
+                    except discord.Forbidden:
+                        print(f"❌ ごめんね、チャンネル '{CONSOLE_OUTPUT_CHANNEL_ID}' にメッセージを送る権限がないよ…！")
+                    except Exception as e:
+                        print(f"❌ Discordへのメッセージ送信中にエラーが出ちゃったよ…！: {e}")
+                        traceback.print_exc()
+
+                fut = asyncio.run_coroutine_threadsafe(_send_message_to_discord(), bot.loop)
                 try:
-                    # チャンネルを見つけるよ (まずキャッシュから、なければAPIから)
-                    channel = bot.get_channel(SEND_CHANNEL_ID) # ★ここで新しいSEND_CHANNEL_IDを使うよ！
-                    if not channel:
-                        channel = await bot.fetch_channel(SEND_CHANNEL_ID) # ★ここも！
-
-                    if channel:
-                        embed = discord.Embed(
-                            title=title,
-                            description=message,
-                            color=0x992d22
-                        )
-                        await channel.send(embed=embed)
-                        print(f"✅ メッセージをチャンネル '{channel.name}' (ID: {channel.id}) に送ったよ！")
-                    else:
-                        print(f"❌ ごめんね、SEND_CHANNEL_ID ({SEND_CHANNEL_ID}) のチャンネルが見つからなかったよ…！")
-                except discord.Forbidden:
-                    print(f"❌ ごめんね、チャンネル '{SEND_CHANNEL_ID}' にメッセージを送る権限がないよ…！")
+                    fut.result(30)
+                except TimeoutError:
+                    print("⚠️ メッセージ送信がタイムアウトしちゃったよ…！")
                 except Exception as e:
-                    print(f"❌ Discordへのメッセージ送信中にエラーが出ちゃったよ…！: {e}")
+                    print(f"❌ メッセージ送信の処理中にエラーが発生しちゃったよ…！: {e}")
                     traceback.print_exc()
 
             fut = asyncio.run_coroutine_threadsafe(_send_message_to_discord(), bot.loop)
