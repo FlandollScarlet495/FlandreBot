@@ -54,7 +54,7 @@
       "name": "/hello",
       "aliases": ["/hello", "hello", "/Flandre", "/flandre", "Flandre", "flandre", "/fran", "/Fran", "fran", "Fran"],
       "usage": "/hello",
-      "description": "ふらんちゃんがあいさつするよ？",
+      "description": "ふらんちゃんがあいさつするよ♡",
       "type": "hello" 
     }
   ]

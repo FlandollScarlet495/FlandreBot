@@ -15,6 +15,8 @@ import aiohttp # 非同期HTTPリクエストを扱うためのモジュール
 import pyopenjtalk
 import soundfile as sf
 import requests
+import subprocess
+from gtts import gTTS
 from bs4 import BeautifulSoup
 from discord.ext import commands # コマンドを使うためのモジュール
 from discord import app_commands, Interaction, Embed # DiscordのAPIを使用するためのモジュール
@@ -26,9 +28,28 @@ load_dotenv() # .envファイルを読み込みます
 
 # GIULD_IDをここで定義するよ！
 GUILD_ID = int(os.getenv("GUILD_ID", "0"))
+if GUILD_ID is None:
+    print("GUILD_IDが.envに設定されてないよ！")
+    sys.exit(1)
 
 # TENOR_API_KEYをここで定義するよ！
 TENOR_API_KEY = os.getenv("TENOR_API_KEY") 
+if TENOR_API_KEY is None:
+    print("TENOR_API_KEYが.envに設定されてないよ！")
+    sys.exit(1)
+
+# ffmpeg_pathをここで定義するよ！
+ffmpeg_path = os.getenv("FFMPEG_PATH")
+print(f"ffmpegのパスは: {ffmpeg_path}")
+if ffmpeg_path is None:
+    print("FFMPEG_PATHが.envに設定されてないよ！")
+    sys.exit(1)
+
+# VOICEVOX_PATHをここで定義するよ！
+voicevox_path = os.getenv("VOICEVOX_PATH")
+if voicevox_path is None:
+    print("VOICEVOX_PATHが.envに設定されてないよ！")
+    sys.exit(1)
 
 # helps.jsonを読み込みます
 with open("helps.json", "r", encoding="utf-8") as f:
@@ -44,10 +65,17 @@ else:
     print("⚠️ CONSOLE_OUTPUT_CHANNEL_IDが.envに設定されていない、または数字ではありません。")
     CONSOLE_OUTPUT_CHANNEL_ID = None # 設定されていなければNoneにします
 
+# 🌸 VoiceVox APIのURL（デフォルト）
+VOICEVOX_API_URL = "http://127.0.0.1:50021"
+
 # BotのIntents設定
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
+VC = None  # VC接続状態を保存
+
+# 🌸 VoiceVoxサーバー起動（バックグラウンド）
+subprocess.Popen([voicevox_path, "--serve"])
 
 # ふらんちゃんBotのクラス定義
 # ふらんちゃんはかわいい女の子のキャラクターで、DiscordのBotとして動作します。
@@ -524,7 +552,7 @@ def convert_role_code(code):
 async def jinro(interaction: discord.Interaction):
     await interaction.response.send_message("🌕✨人狼ゲームの準備だよ！`/join` で参加してね♡")
 
-@bot.tree.command(name="join", description="人狼ゲームに参加するよ♡")
+@bot.tree.command(name="jijoin", description="人狼ゲームに参加するよ♡")
 async def join(interaction: discord.Interaction):
     user_id = interaction.user.id
     if user_id in bot.jinro_players:
@@ -533,7 +561,7 @@ async def join(interaction: discord.Interaction):
         bot.jinro_players.append(user_id)
         await interaction.response.send_message(f"{interaction.user.name} さんが参加したよ♡", ephemeral=True)
 
-@bot.tree.command(name="anjoin", description="人狼ゲームから抜けるよ♡")
+@bot.tree.command(name="jiunjoin", description="人狼ゲームから抜けるよ♡")
 async def anjoin(interaction: discord.Interaction):
     user_id = interaction.user.id
     if user_id in bot.jinro_players:
@@ -1200,88 +1228,87 @@ def make_alias_restart():
 for alias in [a for a in COMMAND_ALIASES if COMMAND_ALIASES[a]["type"] == "restart" and a != "restart"]:
     bot.tree.command(name=alias, description="Botを再起動するよ")(make_alias_restart())
 
-# 読み上げ機能かな？
+# 読み上げ機能！！
 
-voice_client = None  # ボイスクライアント保持用
+# 🌸 音声合成する関数（失敗しても優しく返す💕）
+async def synthesize_voice(text: str, filename="temp.wav", speaker_id=8):
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(f"{VOICEVOX_API_URL}/audio_query", params={"text": text, "speaker": speaker_id}) as resp:
+                if resp.status != 200:
+                    return False
+                audio_query = await resp.json()
 
-@bot.tree.command(name="voicejoin", description="ボイスチャンネルに参加するよ♡")
-async def voicejoin(interaction: discord.Interaction):
-    global voice_client
-    if not interaction.user.voice or not interaction.user.voice.channel:
-        await interaction.response.send_message("まずボイスチャンネルに入ってねっ💦", ephemeral=True)
-        return
-    channel = interaction.user.voice.channel
-    voice_client = await channel.connect()
-    await interaction.response.send_message(f"{channel.name} に参加したよ〜♡")
+            async with session.post(f"{VOICEVOX_API_URL}/synthesis", params={"speaker": speaker_id}, json=audio_query) as resp:
+                if resp.status != 200:
+                    return False
+                audio = await resp.read()
 
-@bot.tree.command(name="voiceleave", description="ボイスチャンネルから退出するよ♡")
-async def voiceleave(interaction: discord.Interaction):
-    global voice_client
-    if voice_client and voice_client.is_connected():
-        await voice_client.disconnect()
-        voice_client = None
-        await interaction.response.send_message("ボイスチャンネルから退出したよ♡")
+        with open(filename, "wb") as f:
+            f.write(audio)
+        return True
+    except Exception as e:
+        print(f"[VOICEVOXエラー] {e}")
+        return False
+
+# 🌸 Bot起動時
+@bot.event
+async def on_ready():
+    await bot.tree.sync()
+    print(f"ふらんちゃん起動！: {bot.user}")
+
+# 🌸 VCに入るコマンド
+@bot.tree.command(name="join", description="VCに入るよ〜！")
+async def join(interaction: discord.Interaction):
+    global VC
+    if interaction.user.voice:
+        channel = interaction.user.voice.channel
+        VC = await channel.connect()
+        await interaction.response.send_message("VCに入ったよ〜！🎶")
     else:
-        await interaction.response.send_message("今ボイスチャンネルにいないよ〜", ephemeral=True)
+        await interaction.response.send_message("VCに入ってから呼んでね💦", ephemeral=True)
 
-@bot.tree.command(name="voicesay", description="ふらんちゃんがボイスチャンネルで喋るよ♡")
-async def voicesay(interaction: discord.Interaction, *, text: str):
-    global voice_client
-    if not voice_client or not voice_client.is_connected():
-        await interaction.response.send_message("まず /voicejoin でボイスチャンネルに入ってねっ💦", ephemeral=True)
+# 🌸 VCから抜けるコマンド
+@bot.tree.command(name="leave", description="VCから抜けるよ〜！")
+async def leave(interaction: discord.Interaction):
+    global VC
+    if VC:
+        await VC.disconnect()
+        VC = None
+        await interaction.response.send_message("VCから抜けたよ〜😴")
+    else:
+        await interaction.response.send_message("まだVCにいないみたい💦", ephemeral=True)
+
+# 🌸 メッセージが来たら読み上げる！
+@bot.event
+async def on_message(message):
+    global VC
+    await bot.process_commands(message)
+
+    if message.author.bot or VC is None:
         return
-    
-    # OpenJTalkで音声合成
-    wav, sr = pyopenjtalk.tts(text)
-    filename = "temp.wav"
-    sf.write(filename, wav, sr)
-    
-    if voice_client.is_playing():
-        voice_client.stop()
-    
-    source = discord.FFmpegPCMAudio(executable="ffmpeg", source=filename)
-    voice_client.play(source)
-    
-    await interaction.response.send_message(f"「{text}」って言ったよ♡")
 
-    # 再生終わったらファイル消すよ
-    while voice_client.is_playing():
-        await asyncio.sleep(0.1)
-    os.remove(filename)
+    text = message.content.strip()
 
-    @bot.event
-    async def on_message(message):
-        # Bot自身のメッセージやDMは無視
-        if message.author.bot or message.guild is None:
-            return
+    if len(text) > 100:
+        await message.channel.send("ながすぎるよぉ〜💦（100文字までにしてねっ）")
+        return
 
-        # メッセージ送信者がボイスチャンネルにいて、botも同じチャンネルにいるなら読み上げる
-        global voice_client
-        if (
-            message.author.voice 
-            and voice_client
-            and voice_client.is_connected()
-            and message.author.voice.channel == voice_client.channel
-        ):
-            # 読み上げ
-            wav, sr = pyopenjtalk.tts(message.content)
-            filename = "temp.wav"
-            sf.write(filename, wav, sr)
-    
-            if voice_client.is_playing():
-                voice_client.stop()
+    success = await synthesize_voice(text, "temp.wav", speaker_id=8)  # めたんちゃん（ID=8）
 
-            source = discord.FFmpegPCMAudio(executable="ffmpeg", source=filename)
-            voice_client.play(source)
+    if not success:
+        await message.channel.send("ふぇぇ…読み上げ失敗しちゃったよ〜💦")
+        return
 
-            # 再生中は次の処理を止める
-            while voice_client.is_playing():
-                await asyncio.sleep(0.1)
+    if VC.is_playing():
+        VC.stop()
 
-            os.remove(filename)
+    VC.play(discord.FFmpegPCMAudio("temp.wav", executable=ffmpeg_path))
 
-        # ほかのコマンドも動かす
-        await bot.process_commands(message)
+    while VC.is_playing():
+        await asyncio.sleep(0.5)
+
+    os.remove("temp.wav")
 
 # ふらんちゃんBotの起動
 # ここから下は、Botを起動するためのコードだよ〜！
@@ -1339,25 +1366,37 @@ except json.JSONDecodeError:
     console_commands_data = []
 
 
-# コンソールループ（修正版）
+# コンソールループ
 def console_loop():
+    # commands.jsonからデータを読み込む
+    try:
+        with open("commands.json", "r", encoding="utf-8") as f:
+            console_commands_data = json.load(f)["commands"]
+    except FileNotFoundError:
+        print("❌ commands.jsonが見つかりません！コンソールコマンドが使えないよ！")
+        return # ファイルがない場合はループを開始しない
+    except json.JSONDecodeError:
+        print("❌ commands.jsonの形式が正しくありません！コンソールコマンドが使えないよ！")
+        return # 形式が不正な場合はループを開始しない
+
     print("🎮 ようこそ！コンソール操作をはじめます！")
 
     while True:
-                try:
+        try:
             user_input = input("📝 入力してね > ")
-
-            # ↓↓↓ この2行を追加すればOKだよ！↓↓↓
-            if not user_input:
-                continue
+            # ★ここから新しいコードを追加するよ！
+            if not user_input.strip(): # もし入力が空っぽだったら
+                print("📝 何か入力してね！") # メッセージを出して
+                continue # 次のループへ進むよ！
+            # ★ここまで！
 
             parts = user_input.split(maxsplit=1)
-            cmd_name = parts[0].lower()
-            
-            # コマンドを探すよ
+            cmd_name = parts[0].lower() # ここでエラーが出てたね
+            cmd_args = parts[1] if len(parts) > 1 else ""
+
+            # コマンド判定はtryブロックの中に入れる
             cmd_info = next((c for c in console_commands_data if cmd_name in c["aliases"]), None)
 
-            # 見つかったら処理するよ！
             if cmd_info:
                 cmd_type = cmd_info["type"]
                 cmd_data = cmd_info
@@ -1365,114 +1404,121 @@ def console_loop():
                 if cmd_type == "shutdown":
                     print("🛑 Botをシャットダウンするね…")
                     try:
-                        asyncio.run_coroutine_threadsafe(bot.close(), bot.loop)
+                        fut = asyncio.run_coroutine_threadsafe(bot.close(), bot.loop)
+                        fut.result(timeout=10)
+                    except asyncio.TimeoutError:
+                        print("⚠️ ボットのシャットダウンがタイムアウトしました。強制終了します。")
                     except Exception as e:
                         print(f"❌ シャットダウン失敗: {e}")
-                    break
+                        traceback.print_exc()
+                    sys.exit(0)
 
                 elif cmd_type == "restart":
                     print("🔄 Botを再起動するよ！")
                     try:
-                        asyncio.run_coroutine_threadsafe(bot.close(), bot.loop)
+                        fut = asyncio.run_coroutine_threadsafe(bot.close(), bot.loop)
+                        fut.result(timeout=10)
+                    except asyncio.TimeoutError:
+                        print("⚠️ 再起動前のクローズがタイムアウトしました。")
                     except Exception as e:
                         print(f"⚠️ 再起動前のクローズ失敗: {e}")
-                    os.execv(sys.executable, [sys.executable] + sys.argv)
+                        traceback.print_exc()
+                    try:
+                        os.execv(sys.executable, [sys.executable] + sys.argv)
+                    except Exception as e:
+                        print(f"❌ 再起動エラー: {e}")
+                        traceback.print_exc()
+                    sys.exit(0)
 
                 elif cmd_type == "sync_global":
                     print("🌐 グローバルコマンドを同期中…")
                     try:
                         fut = asyncio.run_coroutine_threadsafe(bot.tree.sync(), bot.loop)
-                        result = fut.result()
+                        result = fut.result(timeout=60) # タイムアウトを追加
                         print(f"✅ 同期完了！{len(result)} 件のコマンド")
+                    except asyncio.TimeoutError:
+                        print("⚠️ グローバルコマンド同期がタイムアウトしました。")
                     except Exception as e:
                         print(f"❌ 同期エラー: {e}")
                         traceback.print_exc()
 
                 elif cmd_type == "sync_guild":
                     print("🏠 ギルドコマンドを同期中…")
-                    try:
-                        fut = asyncio.run_coroutine_threadsafe(
-                            bot.tree.sync(guild=discord.Object(id=GUILD_ID)), bot.loop
-                        )
-                        result = fut.result()
-                        print(f"✅ ギルド同期完了！{len(result)} 件のコマンド")
-                    except Exception as e:
-                        print(f"❌ 同期エラー: {e}")
-                        traceback.print_exc()
+                    if GUILD_ID == 0:
+                        print("❌ GUILD_IDが設定されていません！.envファイルを確認してね。")
+                    else:
+                        try:
+                            fut = asyncio.run_coroutine_threadsafe(
+                                bot.tree.sync(guild=discord.Object(id=GUILD_ID)), bot.loop
+                            )
+                            result = fut.result(timeout=60) # タイムアウトを追加
+                            print(f"✅ ギルド同期完了！{len(result)} 件のコマンド")
+                        except asyncio.TimeoutError:
+                            print("⚠️ ギルドコマンド同期がタイムアウトしました。")
+                        except Exception as e:
+                            print(f"❌ 同期エラー: {e}")
+                            traceback.print_exc()
 
                 elif cmd_type == "ping":
-                    latency_ms = round(bot.latency * 1000)
-                    print(f"🏓 Pong! Discordサーバーのpingは {latency_ms}ms だよ♡")
+                    if bot.is_ready():
+                        latency = bot.latency
+                        latency_ms = round(latency * 1000)
+                        print(f"🏓 Pong! Discordサーバーのpingは {latency_ms}ms だよ♡")
+                    else:
+                        print("🏓 Botがまだ準備できていないからPingを測れないよ。少し待ってね。")
 
                 elif cmd_type == "help":
                     show_help()
 
                 elif cmd_type == "say":
                     if CONSOLE_OUTPUT_CHANNEL_ID is None:
-                        print("❌ CONSOLE_OUTPUT_CHANNEL_IDが設定されてないからメッセージを送れないの…！")
+                        print("❌ ごめんね、CONSOLE_OUTPUT_CHANNEL_IDが設定されてないからメッセージを送れないの…！.envファイルを確認してね。")
                         continue
 
                     title = input("🖼️ タイトルを入力してね > ") or cmd_data.get("embed_title", "📢 お知らせ")
                     message = input("💬 メッセージを入力してね > ")
+
                     print(f"\n📦 Embed形式：\n【{title}】\n{message}\nチャンネルID: {CONSOLE_OUTPUT_CHANNEL_ID}")
 
-                    async def _send_message_to_discord():
-                        try:
-                            channel = bot.get_channel(CONSOLE_OUTPUT_CHANNEL_ID)
-                            if not channel:
-                                channel = await bot.fetch_channel(CONSOLE_OUTPUT_CHANNEL_ID)
-                            if channel:
-                                embed = discord.Embed(title=title, description=message, color=0x992d22)
-                                await channel.send(embed=embed)
-                                print(f"✅ メッセージをチャンネル '{channel.name}' に送ったよ！")
-                            else:
-                                print(f"❌ チャンネルID ({CONSOLE_OUTPUT_CHANNEL_ID}) が見つからなかったよ…！")
-                        except Exception as e:
-                            print(f"❌ メッセージ送信中にエラーが出ちゃった…！: {e}")
-                            traceback.print_exc()
-                    
-                    fut = asyncio.run_coroutine_threadsafe(_send_message_to_discord(), bot.loop)
+                    fut = asyncio.run_coroutine_threadsafe(
+                        _send_message_to_discord_channel(CONSOLE_OUTPUT_CHANNEL_ID, title=title, message=message),
+                        bot.loop
+                    )
                     try:
                         fut.result(30)
+                    except TimeoutError:
+                        print("⚠️ メッセージ送信がタイムアウトしちゃったよ…！")
                     except Exception as e:
-                        print(f"❌ メッセージ送信の処理中にエラーが発生しちゃった…！: {e}")
-
+                        print(f"❌ メッセージ送信の処理中にエラーが発生しちゃったよ…！: {e}")
+                        traceback.print_exc()
 
                 elif cmd_type == "hello":
                     if CONSOLE_OUTPUT_CHANNEL_ID is None:
-                        print("❌ CONSOLE_OUTPUT_CHANNEL_IDが設定されてないからメッセージを送れないの…！")
+                        print("❌ ごめんね、CONSOLE_OUTPUT_CHANNEL_IDが設定されてないからメッセージを送れないの…！.envファイルを確認してね。")
                         continue
 
                     print(f"\n📦 'hello' メッセージをチャンネルID: {CONSOLE_OUTPUT_CHANNEL_ID} に送るよ！")
 
-                    async def _send_hello_to_discord():
-                        try:
-                            channel = bot.get_channel(CONSOLE_OUTPUT_CHANNEL_ID)
-                            if not channel:
-                                channel = await bot.fetch_channel(CONSOLE_OUTPUT_CHANNEL_ID)
-                            if channel:
-                                await channel.send("♡こんにちは！！")
-                                print(f"✅ 'hello' メッセージをチャンネル '{channel.name}' に送ったよ！")
-                            else:
-                                print(f"❌ チャンネルID ({CONSOLE_OUTPUT_CHANNEL_ID}) が見つからなかったよ…！")
-                        except Exception as e:
-                            print(f"❌ メッセージ送信中にエラーが出ちゃった…！: {e}")
-                            traceback.print_exc()
-
-                    fut = asyncio.run_coroutine_threadsafe(_send_hello_to_discord(), bot.loop)
+                    fut = asyncio.run_coroutine_threadsafe(
+                        _send_message_to_discord_channel(CONSOLE_OUTPUT_CHANNEL_ID, message="こんにちは♡"),
+                        bot.loop
+                    )
                     try:
                         fut.result(30)
+                    except TimeoutError:
+                        print("⚠️ 'hello' メッセージ送信がタイムアウトしちゃったよ…！")
                     except Exception as e:
-                        print(f"❌ 'hello' メッセージ送信の処理中にエラーが発生しちゃった…！: {e}")
-                
-                else:
-                    print(f"⚠️ 未対応のコマンドタイプだよ: {cmd_type}")
+                        print(f"❌ 'hello' メッセージ送信の処理中にエラーが発生しちゃったよ…！: {e}")
+                        traceback.print_exc()
 
-            else:
-                print(f"❓ '{cmd_name}' は知らないコマンドだよ！ 'help' って打ってみてね。")
+                else: # 未対応のコマンドタイプの場合
+                    print(f"⚠️ 未対応のコマンドタイプ: {cmd_type}")
+
+            else: # コマンドが見つからなかった場合
+                print(f"❌ コマンド「{cmd_name}」は見つからなかったよ！")
 
         except Exception as e:
-            print(f"❌ エラーが発生したよ: {e}")
+            print(f"❌ コンソールループでエラーが発生したよ: {e}")
             traceback.print_exc()
             time.sleep(1)
 
