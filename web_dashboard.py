@@ -1,3 +1,8 @@
+import sys
+import io
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify
 import json
 import os
@@ -105,16 +110,20 @@ def api_commands():
         return jsonify([])
 
 def get_bot_status():
-    # Bot状態の取得（実際のBotから取得する場合は適宜修正）
-    return {
-        'status': 'Online',
-        'uptime': '2 hours 30 minutes',
-        'servers': 3,
-        'users': 150,
-        'commands_used': 1250,
-        'memory_usage': '45%',
-        'cpu_usage': '12%'
-    }
+    # Bot状態の取得（bot_status.jsonから取得）
+    try:
+        with open('bot_status.json', 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        return {
+            'status': '不明',
+            'uptime': '-',
+            'servers': '-',
+            'users': '-',
+            'commands_used': '-',
+            'memory_usage': '-',
+            'cpu_usage': '-'
+        }
 
 def get_commands_list():
     # コマンド一覧の取得

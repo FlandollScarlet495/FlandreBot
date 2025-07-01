@@ -182,11 +182,6 @@ class FranBot(commands.Bot):
         await self.tree.sync()
         print("✅ スラッシュコマンドを全体に同期したよ〜！（グローバル）")
 
-    async def on_ready(self):
-        self.start_time = datetime.datetime.now()
-        print(f"✨ ふらんちゃんBotが起動したよっ！")
-        logger.info(f"Bot logged in as {self.user}")
-
     async def on_message(self, message):
         # 自分の処理（もし自分のメッセージなら無視とか）
         if message.author.bot:
@@ -1454,7 +1449,7 @@ async def fade_out(vc, duration=3):
 
 # SoundCloud対応の下準備
 import re
-SOUNDCLOUD_REGEX = re.compile(r"soundcloud\.com/[ -]+/")
+SOUNDCLOUD_REGEX = re.compile(r"soundcloud\.com/[^\s/]+/")
 def is_soundcloud_url(url):
     return bool(SOUNDCLOUD_REGEX.search(url))
 
@@ -1784,8 +1779,47 @@ async def notify_shutdown():
 @bot.event
 async def on_ready():
     start_background_tasks()
+    export_bot_status.start()
     await notify_startup()
     # ... 既存のon_ready処理 ...
 
 # シャットダウンコマンド内で
 # await notify_shutdown() を呼ぶようにしてください
+
+# ===================== Bot状態のJSON出力 =====================
+@tasks.loop(seconds=30)
+async def export_bot_status():
+    try:
+        uptime = str(datetime.datetime.now() - bot.start_time).split('.')[0] if hasattr(bot, 'start_time') else '不明'
+        servers = len(bot.guilds)
+        users = sum(guild.member_count for guild in bot.guilds) if bot.guilds else 0
+        commands_used = getattr(bot, 'commands_used', 0)
+        import psutil
+        memory = psutil.virtual_memory()
+        cpu = psutil.cpu_percent(interval=1)
+        status = {
+            'status': 'Online' if bot.is_ready() else 'Offline',
+            'uptime': uptime,
+            'servers': servers,
+            'users': users,
+            'commands_used': commands_used,
+            'memory_usage': f'{memory.percent}%',
+            'cpu_usage': f'{cpu}%'
+        }
+        with open('bot_status.json', 'w', encoding='utf-8') as f:
+            json.dump(status, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.error(f"Bot状態のJSON出力エラー: {e}")
+
+# コマンド使用数カウント
+@bot.event
+def on_command(ctx):
+    bot.commands_used = getattr(bot, 'commands_used', 0) + 1
+
+# on_readyでタスク起動
+@bot.event
+async def on_ready():
+    start_background_tasks()
+    export_bot_status.start()
+    await notify_startup()
+    # ... 既存のon_ready処理 ...

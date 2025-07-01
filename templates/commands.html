@@ -164,7 +164,7 @@
                     <div class="command-description">{{ command.description }}</div>
                     {% if command.usage %}<div class="command-usage">使い方: <code>{{ command.usage }}</code></div>{% endif %}
                     {% if command.aliases and command.aliases|length > 0 %}<div class="command-aliases">エイリアス: {{ command.aliases|join(', ') }}</div>{% endif %}
-                    <button class="detail-btn" onclick="showDetail({{ command|tojson|safe }})">詳細</button>
+                    <button class="detail-btn" data-cmd='{{ command|tojson|safe }}' onclick="showDetail(this)">詳細</button>
                 </div>
                 {% endfor %}
             </div>
@@ -209,7 +209,8 @@
         </div>
     </div>
     <script>
-        function showDetail(cmd) {
+        function showDetail(btn) {
+            var cmd = JSON.parse(btn.getAttribute('data-cmd'));
             document.getElementById('modalTitle').textContent = cmd.name + ' の詳細';
             document.getElementById('modalDesc').textContent = cmd.description || '';
             document.getElementById('modalUsage').textContent = cmd.usage || '';
