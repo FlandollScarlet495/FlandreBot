@@ -122,10 +122,6 @@ bot = FranBot()
 
 # GIFコマンド！！
 
-# Discordボットの設定だよ
-intents = discord.Intents.default()
-intents.message_content = True # メッセージの内容を読めるようにするよ
-
 # on_message イベントは、スラッシュコマンドの場合は直接使う必要がないので削除するか、
 # 他のプレフィックスコマンドなどの処理がある場合にのみ残します。
 # 今回はスラッシュコマンドに統一するので、一般的なチャットメッセージに反応する部分は削除します。
@@ -231,7 +227,7 @@ async def ping(interaction: discord.Interaction):
 @bot.tree.command(name="info", description="ふらんちゃんの情報を教えるよ♡")
 async def info(interaction: discord.Interaction):
     embed = discord.Embed(title="ふらんちゃんBotの情報", description="ふらんちゃんはかわいいよ♡", color=0xFF69B4)
-    embed.add_field(name="バージョン", value="6.0", inline=False)
+    embed.add_field(name="バージョン", value="6.2", inline=False)
     embed.add_field(name="開発者", value="けんすけ", inline=False)
     await interaction.response.send_message(embed=embed)
 
@@ -1336,11 +1332,82 @@ is_playing_bgm = False
 playlists = {}  # プレイリスト保存用
 text_channel_bgm = {}  # テキストチャンネル用BGM
 
+# 💰 ポイントシステム用のグローバル変数
+points_data = {}
+points_file = "points.json"
+
+# ポイントデータを読み込む関数
+def load_points():
+    global points_data
+    try:
+        with open(points_file, "r", encoding="utf-8") as f:
+            points_data = json.load(f)
+    except FileNotFoundError:
+        points_data = {}
+    except json.JSONDecodeError:
+        points_data = {}
+
+# ポイントデータを保存する関数
+def save_points():
+    with open(points_file, "w", encoding="utf-8") as f:
+        json.dump(points_data, f, ensure_ascii=False, indent=2)
+
+# ポイントを加算する関数
+def add_points(user_id: int, points: int, point_type: str = "text"):
+    user_id_str = str(user_id)
+    if user_id_str not in points_data:
+        points_data[user_id_str] = {"text_points": 0, "voice_points": 0, "total_points": 0}
+    
+    if point_type == "text":
+        points_data[user_id_str]["text_points"] += points
+    elif point_type == "voice":
+        points_data[user_id_str]["voice_points"] += points
+    
+    points_data[user_id_str]["total_points"] = points_data[user_id_str]["text_points"] + points_data[user_id_str]["voice_points"]
+    save_points()
+
+# ランクを計算する関数
+def calculate_rank(total_points: int) -> str:
+    if total_points >= 10000:
+        return "🌟 伝説"
+    elif total_points >= 5000:
+        return "💎 マスター"
+    elif total_points >= 2000:
+        return "👑 エキスパート"
+    elif total_points >= 1000:
+        return "⭐ ベテラン"
+    elif total_points >= 500:
+        return "🎯 中級者"
+    elif total_points >= 100:
+        return "🌱 初心者"
+    else:
+        return "🥚 新参者"
+
+# 起動時にポイントデータを読み込む
+load_points()
+
+# 🎵 ボイスポイント加算タスク
+@tasks.loop(minutes=1)
+async def voice_points_task():
+    """VCにいるユーザーにボイスポイントを加算するタスク"""
+    if VC and VC.channel:
+        for member in VC.channel.members:
+            if not member.bot:
+                add_points(member.id, 1, "voice")
+
+# タスクを開始する関数
+def start_voice_points_task():
+    voice_points_task.start()
+
 # 🌸 Bot起動時
 @bot.event
 async def on_ready():
     await bot.tree.sync()
     print(f"ふらんちゃん起動！: {bot.user}")
+    # 自動再起動ループを開始
+    bot.loop.create_task(auto_restart_loop())
+    # ボイスポイントタスクを開始
+    start_voice_points_task()
 
 # 🌸 VCに入るコマンド
 @bot.tree.command(name="join", description="VCに入るよ〜！")
@@ -1737,6 +1804,29 @@ async def export_playlist(interaction: discord.Interaction, playlist_name: str):
     
     await interaction.response.send_message(f"📁 プレイリスト '{playlist_name}' をエクスポートしたよ〜！", file=discord_file)
 
+# 💰 ランク・ポイント確認コマンド
+@bot.tree.command(name="rank", description="自分のランクとポイントを確認するよ♡")
+async def rank_command(interaction: discord.Interaction):
+    user_id_str = str(interaction.user.id)
+    
+    if user_id_str not in points_data:
+        points_data[user_id_str] = {"text_points": 0, "voice_points": 0, "total_points": 0}
+        save_points()
+    
+    user_points = points_data[user_id_str]
+    rank = calculate_rank(user_points["total_points"])
+    
+    embed = discord.Embed(
+        title=f"🎯 {interaction.user.display_name} さんのランク情報",
+        color=0xFF69B4
+    )
+    embed.add_field(name="📝 テキストポイント", value=f"{user_points['text_points']} pt", inline=True)
+    embed.add_field(name="🎵 ボイスポイント", value=f"{user_points['voice_points']} pt", inline=True)
+    embed.add_field(name="🌟 総合ポイント", value=f"{user_points['total_points']} pt", inline=True)
+    embed.add_field(name="🏆 現在のランク", value=rank, inline=False)
+    
+    await interaction.response.send_message(embed=embed)
+
 # 🌸 メッセージが来たら読み上げる！
 @bot.event
 async def on_message(message):
@@ -1745,6 +1835,10 @@ async def on_message(message):
     # 自分のメッセージには反応しないよ
     if message.author == bot.user:
         return
+
+    # 💰 テキストポイント加算（メッセージ送信時）
+    if not message.author.bot:
+        add_points(message.author.id, 1, "text")
 
     # ふらんちゃんが呼ばれたら反応する
     if "ふらんちゃん" in message.content or "ふらん" in message.content:
@@ -2014,15 +2108,7 @@ async def auto_restart_loop(interval_seconds=4 * 60 * 60):  # デフォルトは
     except Exception as e:
         print(f"❌ 自動再起動失敗: {e}")
         return
-    # ★ここから、on_ready関数をクラスの中に入れるんだよ！
-    async def on_ready(self): # ここに 'self' があるのがポイント！
-        print(f"✨ ふらんちゃんBotが起動したよっ！")
-        print(f"🎉 {self.user.name} としてログインしたよ♡") # self.user.nameでOK
-        self.loop.create_task(auto_restart_loop()) # self.loopを使うのがより安全だよ
 
-    async def on_message(self, message):
-        # ... (on_messageのコード) ...
-        await self.process_commands(message)
 
 # if __name__ == "__main__": の部分はそのまま！
 if __name__ == "__main__":

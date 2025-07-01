@@ -86,7 +86,7 @@
 
    もしくは手動で：
 
-    pip install discord.py python-dotenv aiohttp pyopenjtalk soundfile requests beautifulsoup4 yt-dlp PyNaCl
+    pip install discord.py python-dotenv aiohttp pyopenjtalk soundfile requests beautifulsoup4 yt-dlp PyNaCl urllib3
 
 2. .envファイルを用意
 
@@ -100,7 +100,8 @@
    CONSOLE_OUTPUT_CHANNEL_ID=ログ出力先のチャンネルID（任意）
    FFMPEG_PATH=ffmpegのパス
    VOICEVOX_PATH=VoiceVoxのパス
-
+   VOICEVOX_API_URL=http://127.0.0.1:50021
+   TENOR_API_KEY=LIVDSRZULELA
 
 3. Botを起動！
 
@@ -126,6 +127,7 @@
 ・プレイリスト管理機能
 ・人狼ゲーム機能
 ・TRPGキャラクター管理機能
+・ポイント・ランクシステム
 
 
 【ライセンス】

@@ -8,3 +8,4 @@ soundfile
 bs4
 yt-dlp
 PyNaCl
+urllib3
