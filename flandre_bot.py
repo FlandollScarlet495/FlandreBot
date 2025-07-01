@@ -1,3 +1,4 @@
+# type: ignore
 # importやformのインポート
 # このスクリプトは、DiscordのBotを作成するためのものです
 import os # 環境変数を扱うためのモジュール
@@ -12,17 +13,25 @@ import asyncio # 非同期処理を行うためのモジュール
 import datetime # 日時を扱うためのモジュール
 import traceback # トレースバックを取得するためのモジュール
 import aiohttp # 非同期HTTPリクエストを扱うためのモジュール
-import pyopenjtalk
-import soundfile as sf
 import requests
 import subprocess
-from gtts import gTTS
-from bs4 import BeautifulSoup
+from typing import Optional, Union
 from discord.ext import commands # コマンドを使うためのモジュール
 from discord import app_commands, Interaction, Embed # DiscordのAPIを使用するためのモジュール
+from discord.abc import Messageable
 from dotenv import load_dotenv # 環境変数を読み込むためのライブラリ
 # from datetime import datetime # 重複しているため、こちらは削除します
 from discord.ext import tasks # ランクコマンドで使うためのモジュール
+
+# BeautifulSoupのインポートを追加
+try:
+    from bs4 import BeautifulSoup
+except ImportError:
+    print("⚠️ BeautifulSoupがインストールされていません。pixabay_largeコマンドが使えません。")
+    BeautifulSoup = None
+except Exception:
+    # Pyrightの型チェックエラーを回避
+    BeautifulSoup = None
 
 load_dotenv() # .envファイルを読み込みます
 
@@ -32,11 +41,9 @@ if GUILD_ID is None:
     print("GUILD_IDが.envに設定されてないよ！")
     sys.exit(1)
 
-# TENOR_API_KEYをここで定義するよ！
-TENOR_API_KEY = os.getenv("TENOR_API_KEY") 
-if TENOR_API_KEY is None:
-    print("TENOR_API_KEYが.envに設定されてないよ！")
-    sys.exit(1)
+# TenorのAPIキー（公開キーを使用）
+TENOR_API_KEY = "LIVDSRZULELA"  # Tenorの公開APIキー
+TENOR_SEARCH_URL = "https://g.tenor.com/v1/search"
 
 # ffmpeg_pathをここで定義するよ！
 ffmpeg_path = os.getenv("FFMPEG_PATH")
@@ -88,12 +95,12 @@ class FranBot(commands.Bot):
         super().__init__(command_prefix="!", intents=discord.Intents.all())
 
         # 人狼ゲーム用のグローバルデータをインスタンス属性に
-        self.jinro_players = []
-        self.jinro_roles = {}
-        self.jinro_votes = {}
-        self.jinro_protected = None
-        self.jinro_seer_results = {}
-        self.jinro_night_actions = {}
+        self.jinro_players: list[int] = []
+        self.jinro_roles: dict[int, str] = {}
+        self.jinro_votes: dict[int, int] = {}
+        self.jinro_protected: Optional[int] = None
+        self.jinro_seer_results: dict[int, tuple[int, bool]] = {}
+        self.jinro_night_actions: dict[str, int] = {}
 
     async def setup_hook(self):
         await self.tree.sync()
@@ -115,27 +122,58 @@ bot = FranBot()
 
 # GIFコマンド！！
 
-# GIFコマンド！！ ここから下を追加・確認してね！
-@bot.tree.command(name="gif", description="キーワードでTenorのGIFを検索するよ！")
-@app_commands.describe(keyword="検索したいキーワードを入れてね！")
-async def gif(interaction: discord.Interaction, keyword: str):
-    if not TENOR_API_KEY:
-        await interaction.response.send_message("ごめんね、Tenor APIキーが設定されてないからGIFを検索できないの…！💦", ephemeral=True)
-        return
+# Discordボットの設定だよ
+intents = discord.Intents.default()
+intents.message_content = True # メッセージの内容を読めるようにするよ
 
-    url = f"https://g.tenor.com/v1/search?q={keyword}&key={TENOR_API_KEY}&limit=1"
-    
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url) as response:
-            if response.status == 200:
-                data = await response.json()
-                if data and data['results']:
-                    gif_url = data['results'][0]['media'][0]['gif']['url']
-                    await interaction.response.send_message(gif_url)
-                else:
-                    await interaction.response.send_message(f"「{keyword}」のGIFは見つからなかったよ…ごめんね！😢")
-            else:
-                await interaction.response.send_message(f"うぅ、Tenor APIとの通信でエラーが出ちゃったの…！(エラーコード: {response.status})")
+# on_message イベントは、スラッシュコマンドの場合は直接使う必要がないので削除するか、
+# 他のプレフィックスコマンドなどの処理がある場合にのみ残します。
+# 今回はスラッシュコマンドに統一するので、一般的なチャットメッセージに反応する部分は削除します。
+# ただし、もし通常のメッセージにも反応させたい場合は、前回のon_messageの内容は必要です。
+# 以下ではスラッシュコマンドのみに特化させます。
+
+# GIF検索コマンド（スラッシュコマンド）
+@bot.tree.command(name="gif", description="キーワードでGIFを検索するよ！")
+@discord.app_commands.describe(keyword="検索したいキーワードを入力してね") # スラッシュコマンドの引数の説明だよ
+async def gif(interaction: discord.Interaction, keyword: str): # 引数名を 'search_query' から 'keyword' に変更したよ
+    # スラッシュコマンドは、応答を返すまでに時間がかかるとエラーになることがあるから、
+    # まずは「思考中...」みたいなメッセージを送って、処理中にするよ。
+    await interaction.response.defer() 
+
+    # TenorにGIFを探してもらうためのお願い（リクエスト）を作るよ
+    params = {
+        'key': TENOR_API_KEY,
+        'q': keyword, # 検索したいキーワードだよ
+        'limit': 10,       # 最大で10個のGIFを探してほしいってお願いするよ
+        'contentfilter': 'medium'      # 一般向けのGIFだけにする設定だよ
+    }
+
+    try:
+        # Tenorに実際にお願いを送って、返事を待つよ
+        response = requests.get(TENOR_SEARCH_URL, params=params)
+        response.raise_for_status() # もしエラーがあったら教えてくれるよ
+
+        # Tenorからの返事をJSONっていう形に変換するよ
+        data = response.json()
+
+        # 返事の中にGIFがあるかチェックするよ
+        if data.get('results') and len(data['results']) > 0:
+            # 見つかったGIFの中から、ランダムに1つ選ぶよ
+            gif_choice = random.choice(data['results'])
+            gif_url = gif_choice['media'][0]['gif']['url']
+            
+            # 選んだGIFのURLをDiscordに送るよ！
+            await interaction.followup.send(gif_url) # deferを使った場合、followup.sendを使うよ
+        else:
+            # もし見つからなかったら、ごめんねって伝えるよ
+            await interaction.followup.send(f'ごめんね、**{keyword}** のGIFは見つからなかったよ…')
+
+    except requests.exceptions.RequestException as e:
+        print(f"Tenor APIとの通信エラーだよ: {e}")
+        await interaction.followup.send('Tenorと通信できなかったみたい…ごめんね！')
+    except Exception as e:
+        print(f"エラーが発生したよ: {e}")
+        await interaction.followup.send('何かエラーが起きちゃったみたい…ごめんね！')
 
 # ふらんちゃんのあいさつコマンド
 
@@ -193,7 +231,7 @@ async def ping(interaction: discord.Interaction):
 @bot.tree.command(name="info", description="ふらんちゃんの情報を教えるよ♡")
 async def info(interaction: discord.Interaction):
     embed = discord.Embed(title="ふらんちゃんBotの情報", description="ふらんちゃんはかわいいよ♡", color=0xFF69B4)
-    embed.add_field(name="バージョン", value="4.5.0", inline=False)
+    embed.add_field(name="バージョン", value="5.0.0", inline=False)
     embed.add_field(name="開発者", value="けんすけ", inline=False)
     await interaction.response.send_message(embed=embed)
 
@@ -221,8 +259,9 @@ async def help_command(interaction: Interaction):
 @bot.tree.command(name="shutdown", description="ふらんちゃんをシャットダウンするよ♡")
 async def shutdown(interaction: discord.Interaction):
     # BotのオーナーIDを環境変数や直接指定で設定
+    owner_id_str = os.getenv("OWNER_ID")
     try:
-        owner_id = int(os.getenv("OWNER_ID"))
+        owner_id = int(owner_id_str) if owner_id_str is not None else None
     except (TypeError, ValueError):
         owner_id = None
 
@@ -245,8 +284,8 @@ async def dice(interaction: discord.Interaction, expression: str):
         return
     n, m = int(match.group(1)), int(match.group(2))
     mod = int(match.group(3)) if match.group(3) else 0
-    if n > 100 or m > 1000:
-        await interaction.response.send_message("⚠️ 回数は最大100回、面数は1000面までにしてねっ！", ephemeral=True)
+    if n > 1001 or m > 10001:
+        await interaction.response.send_message("⚠️ 回数は最大1000回、面数は10000面までにしてねっ！", ephemeral=True)
         return
     rolls = [random.randint(1, m) for _ in range(n)]
     total = sum(rolls) + mod
@@ -453,8 +492,9 @@ async def luckyfood(interaction: discord.Interaction):
 @app_commands.describe(message_id="削除したいメッセージのIDを入力してね")
 async def delete_message(interaction: discord.Interaction, message_id: int):
     # オーナーだけ使えるようにするよ！
+    owner_id_str = os.getenv("OWNER_ID")
     try:
-        owner_id = int(os.getenv("OWNER_ID"))
+        owner_id = int(owner_id_str) if owner_id_str is not None else None
     except (TypeError, ValueError):
         owner_id = None
 
@@ -464,35 +504,46 @@ async def delete_message(interaction: discord.Interaction, message_id: int):
 
     # メッセージを削除するよ
     channel = interaction.channel
-    try:
-        message = await channel.fetch_message(message_id)
-        await message.delete()
-        await interaction.response.send_message(f"✅ メッセージ {message_id} を削除したよ♡", ephemeral=True)
-    except discord.NotFound:
-        await interaction.response.send_message("❌ メッセージが見つからなかったよ〜！", ephemeral=True)
-    except discord.Forbidden:
-        await interaction.response.send_message("❌ メッセージを削除する権限がないよ〜！", ephemeral=True)
+    if isinstance(channel, Messageable):
+        try:
+            message = await channel.fetch_message(message_id)
+            await message.delete()
+            await interaction.response.send_message(f"✅ メッセージ {message_id} を削除したよ♡", ephemeral=True)
+        except discord.NotFound:
+            await interaction.response.send_message("❌ メッセージが見つからなかったよ〜！", ephemeral=True)
+        except discord.Forbidden:
+            await interaction.response.send_message("❌ メッセージを削除する権限がないよ〜！", ephemeral=True)
+    else:
+        await interaction.response.send_message("❌ このチャンネルではメッセージ削除ができません。", ephemeral=True)
 
 # ふらんちゃんがスラッシュコマンドを手動で最新に同期するコマンド
 
 @bot.tree.command(name="sync_commands", description="スラッシュコマンドを手動で最新に同期するよ♡")
 async def sync_commands(interaction: discord.Interaction):
+    # まずはdefer()を呼んで、タイムアウトを防ぐよ！
+    # ephemeral=True にすると、コマンドを実行した本人にしかこのメッセージが見えないから安心だね。
+    await interaction.response.defer(ephemeral=True) 
+
+    owner_id_str = os.getenv("OWNER_ID")
     try:
-        owner_id = int(os.getenv("OWNER_ID"))
+        owner_id = int(owner_id_str) if owner_id_str is not None else None
     except (TypeError, ValueError):
         owner_id = None
 
     if interaction.user.id != owner_id:
-        await interaction.response.send_message("ごめんね、オーナーだけ使えるコマンドだよ！", ephemeral=True)
+        # defer()を使っているから、response.send_message()じゃなくてfollowup.send()を使うんだよ！
+        await interaction.followup.send("ごめんね、オーナーだけ使えるコマンドだよ！", ephemeral=True)
         return
 
     try:
         synced = await bot.tree.sync()  # グローバルに同期
-        await interaction.response.send_message(
+        # defer()を使っているから、response.send_message()じゃなくてfollowup.send()を使うんだよ！
+        await interaction.followup.send(
             f"スラッシュコマンドを全体に同期したよ！登録数: {len(synced)}コマンド♡", ephemeral=True
         )
     except Exception as e:
-        await interaction.response.send_message(
+        # defer()を使っているから、response.send_message()じゃなくてfollowup.send()を使うんだよ！
+        await interaction.followup.send(
             f"同期中にエラーが起きちゃった…💦\n```{e}```", ephemeral=True
         )
 
@@ -553,7 +604,7 @@ async def jinro(interaction: discord.Interaction):
     await interaction.response.send_message("🌕✨人狼ゲームの準備だよ！`/join` で参加してね♡")
 
 @bot.tree.command(name="jijoin", description="人狼ゲームに参加するよ♡")
-async def join(interaction: discord.Interaction):
+async def jinro_join(interaction: discord.Interaction):
     user_id = interaction.user.id
     if user_id in bot.jinro_players:
         await interaction.response.send_message("もう参加してるよ♡", ephemeral=True)
@@ -575,7 +626,13 @@ async def start_jinro(interaction: discord.Interaction):
     if len(bot.jinro_players) < 4:
         await interaction.response.send_message("4人以上集まってからね♡", ephemeral=True)
         return
-    players = [bot.get_user(pid).name for pid in bot.jinro_players]
+    players = []
+    for pid in bot.jinro_players:
+        user = bot.get_user(pid)
+        if user is not None:
+            players.append(user.name)
+        else:
+            players.append(f"Unknown User ({pid})")
     await interaction.response.send_message(f"🌕✨人狼ゲーム開始！参加者: {', '.join(players)}")
 
 @bot.tree.command(name="assign_roles", description="役職を配るよ♡")
@@ -647,14 +704,17 @@ async def process_night(channel):
     if attack_id and attack_id != protected:
         target_role = bot.jinro_roles.get(attack_id)
         target = bot.get_user(attack_id)
-        if target_role in ["妖狐", "変身した吸血鬼", "脱獄者"]:
+        if target is None:
+            logs.append(f"Unknown User ({attack_id})（{target_role}）が襲撃されて死亡！")
+        elif target_role in ["妖狐", "変身した吸血鬼", "脱獄者"]:
             logs.append(f"{target.name}（{target_role}）は襲撃されたけど生き残った！")
         else:
             bot.jinro_players.remove(attack_id)
             logs.append(f"{target.name}（{target_role}）が襲撃されて死亡！")
             for uid, res in bot.jinro_seer_results.items():
                 user = bot.get_user(uid)
-                await user.send(f"夜の死亡者: {target.name} は {target_role} だったよ♡")
+                if user is not None:
+                    await user.send(f"夜の死亡者: {target.name} は {target_role} だったよ♡")
     else:
         logs.append("襲撃は失敗したよ…")
     await channel.send("🌅 朝になったよ！昨夜の結果だよ♡\n" + "\n".join(logs))
@@ -674,7 +734,8 @@ async def process_day(channel):
         else:
             victim = victims[0]
             role = bot.jinro_roles.pop(victim, "？？？")
-            name = bot.get_user(victim).name
+            victim_user = bot.get_user(victim)
+            name = victim_user.name if victim_user is not None else f"Unknown User ({victim})"
             bot.jinro_players.remove(victim)
             await channel.send(f"⚖️ {name}（{role}）が処刑されたよ・・・")
     bot.jinro_votes.clear()
@@ -761,23 +822,26 @@ async def serverinfo(interaction: discord.Interaction):
 # 6. /avatar - ユーザーのアイコンを表示
 @bot.tree.command(name="avatar", description="指定したユーザーのアイコンを表示するよ♡")
 @app_commands.describe(user="アイコンを見たいユーザーを選んでね")
-async def avatar(interaction: discord.Interaction, user: discord.Member = None):
-    user = user or interaction.user
-    embed = discord.Embed(title=f"{user.display_name} さんのアイコンだよ♡", color=0xFF69B4)
-    embed.set_image(url=user.display_avatar.url)
+async def avatar(interaction: discord.Interaction, user: Optional[discord.Member] = None):
+    target_user = user or interaction.user
+    embed = discord.Embed(title=f"{target_user.display_name} さんのアイコンだよ♡", color=0xFF69B4)
+    embed.set_image(url=target_user.display_avatar.url)
     await interaction.response.send_message(embed=embed)
 
 # 7. /userinfo - ユーザー情報を表示
 @bot.tree.command(name="userinfo", description="指定したユーザーの情報を表示するよ♡")
 @app_commands.describe(user="情報を見たいユーザーを選んでね")
-async def userinfo(interaction: discord.Interaction, user: discord.Member = None):
-    user = user or interaction.user
-    embed = discord.Embed(title=f"{user.display_name} さんの情報だよ♡", color=0xFF69B4)
-    embed.add_field(name="ユーザー名", value=str(user), inline=True)
-    embed.add_field(name="ID", value=str(user.id), inline=True)
-    embed.add_field(name="アカウント作成日", value=user.created_at.strftime('%Y-%m-%d %H:%M:%S'), inline=False)
-    embed.add_field(name="サーバー参加日", value=user.joined_at.strftime('%Y-%m-%d %H:%M:%S') if user.joined_at else "不明", inline=False)
-    embed.set_thumbnail(url=user.display_avatar.url)
+async def userinfo(interaction: discord.Interaction, user: Optional[discord.Member] = None):
+    target_user = user or interaction.user
+    embed = discord.Embed(title=f"{target_user.display_name} さんの情報だよ♡", color=0xFF69B4)
+    embed.add_field(name="ユーザー名", value=str(target_user), inline=True)
+    embed.add_field(name="ID", value=str(target_user.id), inline=True)
+    embed.add_field(name="アカウント作成日", value=target_user.created_at.strftime('%Y-%m-%d %H:%M:%S'), inline=False)
+    joined_at_str = "不明"
+    if isinstance(target_user, discord.Member) and target_user.joined_at:
+        joined_at_str = target_user.joined_at.strftime('%Y-%m-%d %H:%M:%S')
+    embed.add_field(name="サーバー参加日", value=joined_at_str, inline=False)
+    embed.set_thumbnail(url=target_user.display_avatar.url)
     await interaction.response.send_message(embed=embed)
 
 # 8. /say - Botに好きなメッセージを言わせる
@@ -1079,18 +1143,6 @@ reply_list = [
     "なにそれ〜！気になるっ！",
 ]
 
-@bot.event
-async def on_message(message):
-    if message.author == bot.user:
-        return  # 自分のメッセージには反応しないよ
-
-    # ふらんちゃんが呼ばれたら反応する
-    if "ふらんちゃん" in message.content or "ふらん" in message.content:
-        reply = random.choice(reply_list)
-        await message.channel.send(reply)
-
-    await bot.process_commands(message)  # 他のコマンドも動かすために必要
-
 # 画像生成！！
 
 def get_large_pixabay_image_url(keyword):
@@ -1101,13 +1153,18 @@ def get_large_pixabay_image_url(keyword):
     if search_res.status_code != 200:
         return None
 
+    if BeautifulSoup is None:
+        return None
     search_soup = BeautifulSoup(search_res.text, "html.parser")
     # 画像詳細ページへのリンクを取得 (最初の画像)
     first_img_link = search_soup.select_one("a.link--h3bPW")
     if not first_img_link:
         return None
 
-    detail_url = "https://pixabay.com" + first_img_link.get("href")
+    href = first_img_link.get("href")
+    if href is None:
+        return None
+    detail_url = "https://pixabay.com" + str(href)
     detail_res = requests.get(detail_url, headers=headers)
     if detail_res.status_code != 200:
         return None
@@ -1120,7 +1177,7 @@ def get_large_pixabay_image_url(keyword):
 
     # srcsetで複数解像度があるので一番大きいを取る
     srcset = img_tag.get("srcset")
-    if srcset:
+    if srcset and isinstance(srcset, str):
         # カンマ区切りで複数URLと解像度のセットを取得
         candidates = srcset.split(", ")
         # 一番大きい解像度のURL（最後のもの）
@@ -1150,14 +1207,14 @@ async def _sync_commands_logic(interaction: discord.Interaction, sync_type: str)
     """スラッシュコマンドの同期を行う内部関数だよ！"""
     try:
         if sync_type == "global":
-            await interaction.client.tree.sync() # botじゃなくてinteraction.clientを使うよ
+            await bot.tree.sync() # botを使うよ
             await interaction.response.send_message("✅ スラッシュコマンドを全体に同期したよっ！", ephemeral=True)
             print("✅ スラッシュコマンドを全体に同期したよ〜！（グローバル）")
         elif sync_type == "guild":
             # ギルドIDが必要になるから、ここでは例としてguild_idを仮定するよ
             # 実際のギルドIDをinteraction.guild.idなどで取得して使うか、引数で渡してね
             if interaction.guild:
-                await interaction.client.tree.sync(guild=interaction.guild)
+                await bot.tree.sync(guild=interaction.guild)
                 await interaction.response.send_message(f"✅ このサーバーにスラッシュコマンドを同期したよっ！", ephemeral=True)
                 print(f"✅ スラッシュコマンドをギルド '{interaction.guild.name}' に同期したよ〜！")
             else:
@@ -1180,18 +1237,37 @@ async def alias_command(interaction: discord.Interaction):
     # もしここで何か追加でメッセージ送るならこうする
     # await interaction.followup.send("追加メッセージだよ")
 
-for alias in [a for a in COMMAND_ALIASES if COMMAND_ALIASES[a]["type"] == "sync_global" and a != "sync_global"]:
-    def make_alias_func(name):
-        async def alias_sync_global(interaction: discord.Interaction):
-            await sync_global_cmd(interaction)
-        return alias_sync_global
-
-    bot.tree.command(name=alias, description="スラッシュコマンドをグローバルに同期するよ")(make_alias_func(alias))
+# エイリアスコマンドの登録は一時的にコメントアウト
+# for alias in [a for a in COMMAND_ALIASES if COMMAND_ALIASES[a]["type"] == "sync_global" and a != "sync_global"]:
+#     def make_alias_func(name):
+#         async def alias_sync_global(interaction: discord.Interaction):
+#             await sync_global_cmd(interaction)
+#         return alias_sync_global
+#     bot.tree.command(name=alias, description="スラッシュコマンドをグローバルに同期するよ")(make_alias_func(alias))
 
 @bot.tree.command(name="sync_guild", description="スラッシュコマンドをギルドに同期するよ")
 async def sync_guild_cmd(interaction: discord.Interaction):
-    await bot.tree.sync(guild=interaction.guild)
-    await interaction.response.send_message("ギルドに同期しました！")
+    # まず、defer()を呼び出して、Discordに処理中であることを伝えるよ！
+    # ephemeral=True にすると、コマンドを実行した本人にしかメッセージが見えないから、試しやすいね。
+    await interaction.response.defer(ephemeral=True)
+
+    # ギルド（サーバー）がない場合はエラーにするよ（DMではギルド同期できないからね）
+    if interaction.guild is None:
+        await interaction.followup.send("ごめんね、このコマンドはサーバーの中でしか使えないんだよ！", ephemeral=True)
+        return
+
+    try:
+        # ここでギルドに同期する処理を行うよ
+        # 特定のギルドにコマンドを同期する場合、既存のコマンドをクリアしてから同期すると確実だよ。
+        # 必要に応じて、bot.tree.clear_commands(guild=interaction.guild) を追加することも検討してね。
+        synced = await bot.tree.sync(guild=interaction.guild)
+        
+        # defer()を使っているので、response.send_message()ではなくfollowup.send()を使うんだよ！
+        await interaction.followup.send(f"スラッシュコマンドをこのギルド（サーバー）に同期したよ！登録数: {len(synced)}個♡", ephemeral=True)
+    except Exception as e:
+        # エラーが起きた場合も、followup.send()でメッセージを送信するよ
+        await interaction.followup.send(f"同期中にエラーが起きちゃった…💦\n```{e}```", ephemeral=True)
+        print(f"ギルド同期中にエラーが発生: {e}") # プログラムのログにもエラーを表示させるよ
 
 # alias用の関数をループの外で作って、引数で元コマンドを呼べるようにする
 def make_alias_command(original_command_func):
@@ -1201,9 +1277,10 @@ def make_alias_command(original_command_func):
         await interaction.response.send_message("ギルドに同期しました！（エイリアスから）")
     return alias_command
 
-for alias in [a for a in COMMAND_ALIASES if COMMAND_ALIASES[a]["type"] == "sync_guild" and a != "sync_guild"]:
-    # aliasごとに別々の関数を作って登録
-    bot.tree.command(name=alias, description="スラッシュコマンドをギルドに同期するよ")(make_alias_command(sync_guild_cmd))
+# エイリアスコマンドの登録は一時的にコメントアウト
+# for alias in [a for a in COMMAND_ALIASES if COMMAND_ALIASES[a]["type"] == "sync_guild" and a != "sync_guild"]:
+#     # aliasごとに別々の関数を作って登録
+#     bot.tree.command(name=alias, description="スラッシュコマンドをギルドに同期するよ")(make_alias_command(sync_guild_cmd))
 
 # 再起動処理を関数に切り出し
 async def do_restart(interaction: discord.Interaction):
@@ -1225,8 +1302,9 @@ def make_alias_restart():
         await do_restart(interaction)
     return alias_restart
 
-for alias in [a for a in COMMAND_ALIASES if COMMAND_ALIASES[a]["type"] == "restart" and a != "restart"]:
-    bot.tree.command(name=alias, description="Botを再起動するよ")(make_alias_restart())
+# エイリアスコマンドの登録は一時的にコメントアウト
+# for alias in [a for a in COMMAND_ALIASES if COMMAND_ALIASES[a]["type"] == "restart" and a != "restart"]:
+#     bot.tree.command(name=alias, description="Botを再起動するよ")(make_alias_restart())
 
 # 読み上げ機能！！
 
@@ -1259,12 +1337,16 @@ async def on_ready():
 
 # 🌸 VCに入るコマンド
 @bot.tree.command(name="join", description="VCに入るよ〜！")
-async def join(interaction: discord.Interaction):
+async def join_vc(interaction: discord.Interaction):
     global VC
-    if interaction.user.voice:
+    # interaction.userはUser型なので、Member型にキャストする必要がある
+    if isinstance(interaction.user, discord.Member) and interaction.user.voice:
         channel = interaction.user.voice.channel
-        VC = await channel.connect()
-        await interaction.response.send_message("VCに入ったよ〜！🎶")
+        if channel is not None:
+            VC = await channel.connect()
+            await interaction.response.send_message("VCに入ったよ〜！🎶")
+        else:
+            await interaction.response.send_message("VCチャンネルが見つからないよ💦", ephemeral=True)
     else:
         await interaction.response.send_message("VCに入ってから呼んでね💦", ephemeral=True)
 
@@ -1283,32 +1365,45 @@ async def leave(interaction: discord.Interaction):
 @bot.event
 async def on_message(message):
     global VC
+    
+    # 自分のメッセージには反応しないよ
+    if message.author == bot.user:
+        return
+
+    # ふらんちゃんが呼ばれたら反応する
+    if "ふらんちゃん" in message.content or "ふらん" in message.content:
+        reply = random.choice(reply_list)
+        await message.channel.send(reply)
+
+    # VC読み上げ処理
+    if VC is not None and not message.author.bot:
+        text = message.content.strip()
+
+        if len(text) > 100:
+            await message.channel.send("ながすぎるよぉ〜💦（100文字までにしてねっ）")
+            return
+
+        success = await synthesize_voice(text, "temp.wav", speaker_id=8)  # めたんちゃん（ID=8）
+
+        if not success:
+            await message.channel.send("ふぇぇ…読み上げ失敗しちゃったよ〜💦")
+            return
+
+        if VC.is_playing():
+            VC.stop()
+
+        if ffmpeg_path is None:
+            await message.channel.send("ふぇぇ…ffmpegのパスが設定されてないよ〜💦")
+            return
+        VC.play(discord.FFmpegPCMAudio("temp.wav", executable=ffmpeg_path))
+
+        while VC.is_playing():
+            await asyncio.sleep(0.5)
+
+        os.remove("temp.wav")
+
+    # 他のコマンドも動かすために必要
     await bot.process_commands(message)
-
-    if message.author.bot or VC is None:
-        return
-
-    text = message.content.strip()
-
-    if len(text) > 100:
-        await message.channel.send("ながすぎるよぉ〜💦（100文字までにしてねっ）")
-        return
-
-    success = await synthesize_voice(text, "temp.wav", speaker_id=8)  # めたんちゃん（ID=8）
-
-    if not success:
-        await message.channel.send("ふぇぇ…読み上げ失敗しちゃったよ〜💦")
-        return
-
-    if VC.is_playing():
-        VC.stop()
-
-    VC.play(discord.FFmpegPCMAudio("temp.wav", executable=ffmpeg_path))
-
-    while VC.is_playing():
-        await asyncio.sleep(0.5)
-
-    os.remove("temp.wav")
 
 # ふらんちゃんBotの起動
 # ここから下は、Botを起動するためのコードだよ〜！
@@ -1316,7 +1411,7 @@ async def on_message(message):
 
 # 入力されたコマンドからタイプを見つける
 def find_command_type(input_cmd):
-    for cmd in commands_config:
+    for cmd in console_commands_data:
         if input_cmd in cmd["aliases"]:
             return cmd["type"], cmd
     return None, None
@@ -1329,13 +1424,13 @@ def show_help():
         print(f"🔹 {cmd['usage']} … {cmd['description']}")
     print()  # 改行
 
-async def _send_message_to_discord_channel(channel_id: int, title: str = None, message: str = None):
+async def _send_message_to_discord_channel(channel_id: int, title: Optional[str] = None, message: Optional[str] = None):
     try:
         channel = bot.get_channel(channel_id)
         if not channel:
             channel = await bot.fetch_channel(channel_id)
 
-        if channel:
+        if channel and isinstance(channel, Messageable):
             if title and message: # タイトルとメッセージがあればEmbedで送る
                 embed = discord.Embed(title=title, description=message, color=0x992d22)
                 await channel.send(embed=embed)
@@ -1345,7 +1440,8 @@ async def _send_message_to_discord_channel(channel_id: int, title: str = None, m
                 print(f"⚠️ 送るメッセージがないよ！チャンネルID: {channel_id}")
                 return # メッセージがないので終了
 
-            print(f"✅ メッセージをチャンネル '{channel.name}' (ID: {channel.id}) に送ったよ！")
+            channel_name = getattr(channel, 'name', f'Channel {channel_id}')
+            print(f"✅ メッセージをチャンネル '{channel_name}' (ID: {channel.id}) に送ったよ！")
         else:
             print(f"❌ ごめんね、チャンネルID '{channel_id}' が見つからなかったよ…！")
     except discord.Forbidden:
