@@ -56,6 +56,76 @@
       "usage": "/hello",
       "description": "ふらんちゃんがあいさつするよ♡",
       "type": "hello" 
+    },
+    {
+      "name": "/chat",
+      "aliases": ["/ai", "/talk", "chat", "ai", "talk"],
+      "usage": "/chat <message>",
+      "description": "無料AIふらんちゃんと会話するよ♡",
+      "type": "chat"
+    },
+    {
+      "name": "/generate_image",
+      "aliases": ["/image", "/ai_image", "generate_image", "image", "ai_image"],
+      "usage": "/generate_image <prompt>",
+      "description": "完全無料で画像を検索するよ♡（APIキー不要）",
+      "type": "generate_image"
+    },
+    {
+      "name": "/translate_advanced",
+      "aliases": ["/translate_multi", "/multi_translate", "translate_advanced", "translate_multi", "multi_translate"],
+      "usage": "/translate_advanced <text> <target_lang>",
+      "description": "多言語翻訳機能だよ♡",
+      "type": "translate_advanced"
+    },
+    {
+      "name": "/search_music",
+      "aliases": ["/music_search", "/find_music", "search_music", "music_search", "find_music"],
+      "usage": "/search_music <query>",
+      "description": "YouTubeで音楽を検索して再生するよ♡",
+      "type": "search_music"
+    },
+    {
+      "name": "/rps",
+      "aliases": ["/rock_paper_scissors", "/janken", "rps", "rock_paper_scissors", "janken"],
+      "usage": "/rps <choice>",
+      "description": "じゃんけんゲームだよ♡",
+      "type": "rps"
+    },
+    {
+      "name": "/number_guess",
+      "aliases": ["/guess_game", "/number_game", "number_guess", "guess_game", "number_game"],
+      "usage": "/number_guess <max_number>",
+      "description": "数字当てゲームだよ♡",
+      "type": "number_guess"
+    },
+    {
+      "name": "/server_stats",
+      "aliases": ["/stats", "/serverinfo_detailed", "server_stats", "stats", "serverinfo_detailed"],
+      "usage": "/server_stats",
+      "description": "サーバーの統計情報を表示するよ♡",
+      "type": "server_stats"
+    },
+    {
+      "name": "/user_stats",
+      "aliases": ["/mystats", "/userinfo_detailed", "user_stats", "mystats", "userinfo_detailed"],
+      "usage": "/user_stats",
+      "description": "自分の統計情報を表示するよ♡",
+      "type": "user_stats"
+    },
+    {
+      "name": "/system_info",
+      "aliases": ["/sysinfo", "/bot_info", "system_info", "sysinfo", "bot_info"],
+      "usage": "/system_info",
+      "description": "Botのシステム情報を表示するよ♡",
+      "type": "system_info"
+    },
+    {
+      "name": "/logs",
+      "aliases": ["/bot_logs", "/show_logs", "logs", "bot_logs", "show_logs"],
+      "usage": "/logs <lines>",
+      "description": "Botのログを表示するよ♡（管理者専用）",
+      "type": "logs"
     }
   ]
 }

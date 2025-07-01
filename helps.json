@@ -83,6 +83,20 @@
     {"name": "/rank", "description": "自分のランクとポイントを確認するよ♡"},
     {"name": "/restart", "description": "Botを再起動するよ"},
     {"name": "/sync_global", "description": "スラッシュコマンドをグローバルに同期するよ！"},
-    {"name": "/sync_guild", "description": "スラッシュコマンドをギルドに同期するよ"}
+    {"name": "/sync_guild", "description": "スラッシュコマンドをギルドに同期するよ"},
+    {"name": "/chat", "description": "ふらんちゃんと無料AIチャットするよ♡"},
+    {"name": "/chat_reset", "description": "AIチャットの履歴をリセットするよ♡"},
+    {"name": "/generate_image", "description": "完全無料で画像を検索するよ♡（APIキー不要）"},
+    {"name": "/translate_advanced", "description": "多言語翻訳機能だよ♡"},
+    {"name": "/search_music", "description": "YouTubeで音楽を検索して再生するよ♡"},
+    {"name": "/rps", "description": "じゃんけんゲームだよ♡"},
+    {"name": "/number_guess", "description": "数字当てゲームだよ♡"},
+    {"name": "/guess", "description": "数字当てゲームの回答だよ♡"},
+    {"name": "/server_stats", "description": "サーバーの統計情報を表示するよ♡"},
+    {"name": "/user_stats", "description": "自分の統計情報を表示するよ♡"},
+    {"name": "/logs", "description": "Botのログを表示するよ♡（管理者専用）"},
+    {"name": "/system_info", "description": "Botのシステム情報を表示するよ♡"},
+    {"name": "/custom_command", "description": "カスタムコマンドを作成するよ♡"},
+    {"name": "/custom_command_list", "description": "カスタムコマンド一覧を表示するよ♡"}
   ]
 }

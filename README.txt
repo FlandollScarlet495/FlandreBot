@@ -1,15 +1,21 @@
 ＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝
-🌟 FlandreBot（ふらんちゃんBot_V6.2） - Discord用日本語Bot
+🌟 FlandreBot（ふらんちゃんBot_V6.3） - Discord用日本語Bot
 ＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝
 
 ふらんちゃんBotは、東方Projectのフランドール・スカーレット風の
 かわいくて多機能な Discord Bot です！
 
-雑談からTRPG、画像検索、VC読み上げ、BGM再生、人狼ゲーム、ランクポイント管理まで
-色んなことができるすごい子だよ♡
+雑談からTRPG、画像検索、VC読み上げ、BGM再生、人狼ゲーム、ランクポイント管理、
+AIチャット、画像生成、多言語翻訳まで色んなことができるすごい子だよ♡
 
 
 【主な機能】
+
+● AI・チャット機能（無料版）
+・/chat              無料AIふらんちゃんと会話（Hugging Face API）
+・/chat_reset        AIチャット履歴リセット
+・/generate_image    完全無料画像検索（APIキー不要）
+・/translate_advanced 多言語翻訳（9言語対応）
 
 ● エンタメ・便利系コマンド
 ・/hello         あいさつ
@@ -31,6 +37,7 @@
 ・/join          VCに接続
 ・/leave         VCから退出
 ・/play          YouTubeのBGMを再生
+・/search_music  YouTubeで音楽検索・再生
 ・/stop          BGMを停止
 ・/volume        音量調整（0-100）
 ・/nowplaying    現在再生中の曲を確認
@@ -51,6 +58,8 @@
 ● ゲーム機能
 ・人狼ゲーム：/jinro, /jijoin, /start_jinro, /divine, /guard, /attack など
 ・TRPGキャラクター管理：/trpg_char_create, /trpg_char_show, /trpg_char_edit など
+・じゃんけんゲーム：/rps グー・チョキ・パー
+・数字当てゲーム：/number_guess, /guess 数字を当てよう
 
 ● ボイスチャンネル 読み上げ機能
 ・/voicejoin     ボイスチャンネルに入る
@@ -65,6 +74,21 @@
 ・/rank         現在のポイントとランク表示
 
 💾 points.json に自動保存され、Bot再起動でも維持されます。
+
+● 統計・情報機能
+・/server_stats   サーバー統計情報
+・/user_stats     ユーザー統計情報
+・/system_info    Botシステム情報
+・/logs           Botログ表示（管理者専用）
+
+● カスタマイズ機能
+・/custom_command     カスタムコマンド作成
+・/custom_command_list カスタムコマンド一覧
+
+● ウェルカム機能
+・新メンバー歓迎メッセージ
+・メンバー退出メッセージ
+・自動統計更新
 
 ● 自動再起動
 ・4時間ごとに自動で再起動（変更可）
@@ -86,7 +110,7 @@
 
    もしくは手動で：
 
-    pip install discord.py python-dotenv aiohttp pyopenjtalk soundfile requests beautifulsoup4 yt-dlp PyNaCl urllib3
+    pip install discord.py python-dotenv aiohttp pyopenjtalk soundfile requests beautifulsoup4 yt-dlp PyNaCl urllib3 openai psutil asyncio-mqtt python-dateutil
 
 2. .envファイルを用意
 
@@ -98,10 +122,12 @@
    GUILD_ID=123456789012345678
    OWNER_ID=あなたのユーザーID
    CONSOLE_OUTPUT_CHANNEL_ID=ログ出力先のチャンネルID（任意）
+   WELCOME_CHANNEL_ID=ウェルカムメッセージ送信用チャンネルID（任意）
    FFMPEG_PATH=ffmpegのパス
    VOICEVOX_PATH=VoiceVoxのパス
    VOICEVOX_API_URL=http://127.0.0.1:50021
    TENOR_API_KEY=LIVDSRZULELA
+   HUGGINGFACE_API_KEY=Hugging Face APIキー（無料AI機能使用時、任意）
 
 3. Botを起動！
 
@@ -114,11 +140,16 @@
 ・commands.json        コマンド設定とエイリアス
 ・helps.json           /helpコマンドの説明文
 ・points.json          ランクポイント保存ファイル（自動生成）
+・custom_commands.json カスタムコマンド保存ファイル（自動生成）
+・bot.log              Botログファイル（自動生成）
 ・.env                 環境変数ファイル（手動で作成）
 
 
 【特殊機能】
 
+・AIチャット機能（Hugging Face API使用、無料）
+・画像検索機能（完全無料・APIキー不要）
+・多言語翻訳機能（9言語対応）
 ・コンソール操作（Bot起動中にターミナルでコマンド送信可能）
 ・再起動系コマンド（/shutdown, /restart）あり
 ・ネットとDiscordの応答速度を測る /ping
@@ -128,6 +159,47 @@
 ・人狼ゲーム機能
 ・TRPGキャラクター管理機能
 ・ポイント・ランクシステム
+・じゃんけんゲーム・数字当てゲーム
+・サーバー・ユーザー統計機能
+・ウェルカム機能
+・カスタムコマンド機能
+・詳細ログ機能
+
+
+【新機能詳細】
+
+● AIチャット機能（無料版）
+・Hugging Face APIを使用（無料）
+・ふらんちゃんの性格設定で会話
+・ユーザー別チャット履歴管理
+・履歴リセット機能
+
+● 画像検索機能（完全無料版）
+・APIキー不要で完全無料
+・複数の画像ソースを自動切り替え
+・Pixabay、Unsplash、Pexels、代替画像を順次試行
+・カテゴリ別の代替画像機能
+・エラー時も確実に画像を表示
+
+● 多言語翻訳機能
+・9言語対応（日本語、英語、韓国語、中国語、スペイン語、フランス語、ドイツ語、イタリア語、ポルトガル語、ロシア語）
+・Google翻訳API使用
+
+● 音楽機能強化
+・YouTube検索機能
+・yt-dlpによる高品質再生
+・プレイリスト管理強化
+
+● ゲーム機能追加
+・じゃんけんゲーム
+・数字当てゲーム
+・統計機能付き
+
+● 統計・ログ機能
+・サーバー統計表示
+・ユーザー統計表示
+・システム情報表示
+・詳細ログ機能
 
 
 【ライセンス】
