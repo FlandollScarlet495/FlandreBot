@@ -33,16 +33,10 @@ except Exception:
     # Pyrightの型チェックエラーを回避
     BeautifulSoup = None
 
-# 無料AI APIのインポート
-try:
-    import requests
-    print("✅ requestsライブラリが利用可能です。無料AI機能が使えます。")
-except ImportError:
-    print("⚠️ requestsがインストールされていません。AI機能が使えません。")
-
 # 音楽機能の強化用ライブラリ
 try:
     import yt_dlp
+    print("✅ yt-dlpが利用可能です。音楽機能が使えます。")
 except ImportError:
     print("⚠️ yt-dlpがインストールされていません。音楽機能が制限されます。")
     yt_dlp = None
@@ -167,6 +161,7 @@ class FranBot(commands.Bot):
         print("✅ スラッシュコマンドを全体に同期したよ〜！（グローバル）")
 
     async def on_ready(self):
+        self.start_time = datetime.datetime.now()
         print(f"✨ ふらんちゃんBotが起動したよっ！")
         logger.info(f"Bot logged in as {self.user}")
 
@@ -1062,6 +1057,179 @@ async def time_command(interaction: discord.Interaction):
     msg += "\n🌸 今日の幻想郷もまったり時間が流れてるねっ♪ どの時刻が一番好き〜？"
 
     await interaction.response.send_message(msg)
+
+# ===================== コンソールループ機能 =====================
+
+def console_loop():
+    """コンソールからのコマンド入力を受け付けるループ"""
+    print("🎮 コンソールコマンドが有効になりました！")
+    print("📝 使用可能なコマンド:")
+    print("  - 'restart': Botを再起動")
+    print("  - 'shutdown': Botをシャットダウン")
+    print("  - 'sync': スラッシュコマンドを同期")
+    print("  - 'status': Botの状態を表示")
+    print("  - 'help': ヘルプを表示")
+    print("  - 'dice <式>': サイコロを振る（例: dice 2d6+1）")
+    print("  - 'omikuji': おみくじを引く")
+    print("  - 'touhou': 東方キャラを紹介")
+    print("  - 'time': 現在時刻を表示")
+    print("  - 'ping': 応答速度をチェック")
+    print("  - 'info': Botの情報を表示")
+    print("  - 'quit' または 'exit': プログラム終了")
+    print("=" * 50)
+    
+    while True:
+        try:
+            command = input("ふらんちゃんBot > ").strip()
+            
+            if not command:
+                continue
+                
+            cmd_parts = command.split()
+            cmd = cmd_parts[0].lower()
+            
+            if cmd in ['quit', 'exit']:
+                print("👋 プログラムを終了します...")
+                os._exit(0)
+                
+            elif cmd == 'restart':
+                print("🔄 Botを再起動します...")
+                try:
+                    # Botの再起動処理
+                    asyncio.run_coroutine_threadsafe(bot.close(), bot.loop)
+                    print("✅ Botを再起動しました")
+                except Exception as e:
+                    print(f"❌ 再起動に失敗しました: {e}")
+                
+            elif cmd == 'shutdown':
+                print("🛑 Botをシャットダウンします...")
+                try:
+                    asyncio.run_coroutine_threadsafe(bot.close(), bot.loop)
+                    print("✅ Botをシャットダウンしました")
+                except Exception as e:
+                    print(f"❌ シャットダウンに失敗しました: {e}")
+                
+            elif cmd == 'sync':
+                print("🔄 スラッシュコマンドを同期します...")
+                try:
+                    asyncio.run_coroutine_threadsafe(bot.tree.sync(), bot.loop)
+                    print("✅ スラッシュコマンドを同期しました")
+                except Exception as e:
+                    print(f"❌ 同期に失敗しました: {e}")
+                
+            elif cmd == 'status':
+                print("📊 Botの状態:")
+                print(f"  - 接続状態: {'オンライン' if bot.is_ready() else 'オフライン'}")
+                print(f"  - レイテンシ: {round(bot.latency * 1000)}ms")
+                print(f"  - サーバー数: {len(bot.guilds)}")
+                print(f"  - ユーザー数: {len(bot.users)}")
+                print(f"  - 起動時刻: {bot.start_time if hasattr(bot, 'start_time') else '不明'}")
+                
+            elif cmd == 'help':
+                print("📝 使用可能なコマンド:")
+                print("  - 'restart': Botを再起動")
+                print("  - 'shutdown': Botをシャットダウン")
+                print("  - 'sync': スラッシュコマンドを同期")
+                print("  - 'status': Botの状態を表示")
+                print("  - 'help': ヘルプを表示")
+                print("  - 'dice <式>': サイコロを振る（例: dice 2d6+1）")
+                print("  - 'omikuji': おみくじを引く")
+                print("  - 'touhou': 東方キャラを紹介")
+                print("  - 'time': 現在時刻を表示")
+                print("  - 'ping': 応答速度をチェック")
+                print("  - 'info': Botの情報を表示")
+                print("  - 'quit' または 'exit': プログラム終了")
+                
+            elif cmd == 'dice':
+                if len(cmd_parts) < 2:
+                    print("❓ サイコロの式を指定してください（例: dice 2d6+1）")
+                    continue
+                    
+                expression = cmd_parts[1]
+                try:
+                    # サイコロロジックを実行
+                    import re
+                    match = re.fullmatch(r"(\d{1,2})[dD](\d{1,3})([+-]\d+)?", expression.strip())
+                    if not match:
+                        print("⚠️ サイコロの式は `NdM` または `NdM±X`（例: 2d6, 1d20, 3d6+2）みたいにしてね！")
+                        continue
+                        
+                    n, m = int(match.group(1)), int(match.group(2))
+                    mod = int(match.group(3)) if match.group(3) else 0
+                    
+                    if n > 1001 or m > 10001:
+                        print("⚠️ 回数は最大1000回、面数は10000面までにしてねっ！")
+                        continue
+                        
+                    rolls = [random.randint(1, m) for _ in range(n)]
+                    total = sum(rolls) + mod
+                    rolls_text = ', '.join(str(r) for r in rolls)
+                    mod_text = f" {match.group(3)}" if match.group(3) else ""
+                    
+                    print(f"🎲 サイコロ `{expression}` の結果だよ〜！")
+                    print(f"出目: {rolls_text}{mod_text}")
+                    print(f"合計: **{total}**")
+                    
+                except Exception as e:
+                    print(f"❌ サイコロエラー: {e}")
+                    
+            elif cmd == 'omikuji':
+                fortunes = ["大吉♡", "中吉♪", "小吉〜", "凶…", "大凶！？"]
+                result = random.choice(fortunes)
+                print(f"今日の運勢は… {result} だよっ！")
+                
+            elif cmd == 'touhou':
+                characters = [
+                    "フランドール・スカーレット", "レミリア・スカーレット", "博麗霊夢", "霧雨魔理沙", "十六夜咲夜", 
+                    "パチュリー・ノーレッジ", "チルノ", "魂魄妖夢", "西行寺幽々子", "八雲紫", "藤原妹紅",
+                    "アリス・マーガトロイド", "紅美鈴", "犬走椛", "射命丸文", "風見幽香",
+                    "古明地こいし", "古明地さとり", "東風谷早苗", "八坂神奈子", "洩矢諏訪子"
+                ]
+                chosen = random.choice(characters)
+                print(f"今日のおすすめ東方キャラは… **{chosen}** だよ♡")
+                
+            elif cmd == 'time':
+                # 現在時刻を表示
+                now_utc = datetime.datetime.now(datetime.timezone.utc)
+                jst = datetime.timezone(datetime.timedelta(hours=9))
+                now_jst = now_utc.astimezone(jst)
+                
+                youbi_jp = ["月曜日", "火曜日", "水曜日", "木曜日", "金曜日", "土曜日", "日曜日"]
+                weekday_index = now_jst.weekday()
+                youbi = youbi_jp[weekday_index]
+                
+                print("**⏳ ふらんちゃん時空レポートだよっ♡**")
+                print(f"🗾 **日本時間（JST）**: {now_jst.strftime('%Y年%m月%d日 %H:%M:%S')}（{youbi}）")
+                print(f"🌐 **世界標準時（UTC）**: {now_utc.strftime('%Y-%m-%d %H:%M:%S')}")
+                
+            elif cmd == 'ping':
+                print("🌐 応答速度をチェック中...")
+                discord_latency = round(bot.latency * 1000)
+                print(f"💬 Discord応答速度: `{discord_latency}ms`")
+                if discord_latency > 150:
+                    print("今ちょっと遅いかも💦")
+                else:
+                    print("今はちょっと早〜い💨しゅびんしゅびん♪")
+                    
+            elif cmd == 'info':
+                print("ふらんちゃんBotの情報")
+                print("ふらんちゃんはかわいいよ♡")
+                print("バージョン: 6.3")
+                print("開発者: けんすけ")
+                
+            else:
+                print(f"❓ 不明なコマンド: {command}")
+                print("💡 'help' で使用可能なコマンドを確認してください")
+                
+        except KeyboardInterrupt:
+            print("\n👋 Ctrl+Cが押されました。プログラムを終了します...")
+            os._exit(0)
+        except EOFError:
+            print("\n👋 EOFが検出されました。プログラムを終了します...")
+            os._exit(0)
+        except Exception as e:
+            print(f"❌ コンソールループでエラーが発生しました: {e}")
+            logger.error(f"コンソールループエラー: {e}")
 
 # ===================== Bot起動 =====================
 

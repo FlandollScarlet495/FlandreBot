@@ -68,7 +68,7 @@
       "name": "/generate_image",
       "aliases": ["/image", "/ai_image", "generate_image", "image", "ai_image"],
       "usage": "/generate_image <prompt>",
-      "description": "完全無料で画像を検索するよ♡（APIキー不要）",
+      "description": "無料で画像を検索するよ♡（APIキー不要）",
       "type": "generate_image"
     },
     {
@@ -126,6 +126,41 @@
       "usage": "/logs <lines>",
       "description": "Botのログを表示するよ♡（管理者専用）",
       "type": "logs"
+    },
+    {
+      "name": "/dice",
+      "aliases": ["/roll", "/dice", "dice", "roll"],
+      "usage": "/dice <expression>",
+      "description": "TRPG風サイコロを振るよ！",
+      "type": "dice"
+    },
+    {
+      "name": "/omikuji",
+      "aliases": ["/fortune", "/omikuji", "omikuji", "fortune"],
+      "usage": "/omikuji",
+      "description": "おみくじを引くよ♡",
+      "type": "omikuji"
+    },
+    {
+      "name": "/touhou",
+      "aliases": ["/th", "/touhou", "touhou", "th"],
+      "usage": "/touhou",
+      "description": "東方キャラを紹介するよ♡",
+      "type": "touhou"
+    },
+    {
+      "name": "/time",
+      "aliases": ["/clock", "/time", "time", "clock"],
+      "usage": "/time",
+      "description": "現在時刻を表示するよ♡",
+      "type": "time"
+    },
+    {
+      "name": "/gif",
+      "aliases": ["/gif", "gif"],
+      "usage": "/gif <keyword>",
+      "description": "GIFを検索するよ♡",
+      "type": "gif"
     }
   ]
 }

@@ -1,15 +1,13 @@
 discord.py>=2.3.2
 python-dotenv
 aiohttp
-requests
+requests>=2.31.0
 beautifulsoup4
 pyopenjtalk
 soundfile
-bs4
 yt-dlp
 PyNaCl
 urllib3
-requests>=2.31.0
 psutil
 asyncio-mqtt
 python-dateutil
