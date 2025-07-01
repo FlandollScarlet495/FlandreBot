@@ -231,7 +231,7 @@ async def ping(interaction: discord.Interaction):
 @bot.tree.command(name="info", description="ふらんちゃんの情報を教えるよ♡")
 async def info(interaction: discord.Interaction):
     embed = discord.Embed(title="ふらんちゃんBotの情報", description="ふらんちゃんはかわいいよ♡", color=0xFF69B4)
-    embed.add_field(name="バージョン", value="5.0.0", inline=False)
+    embed.add_field(name="バージョン", value="6.0", inline=False)
     embed.add_field(name="開発者", value="けんすけ", inline=False)
     await interaction.response.send_message(embed=embed)
 
@@ -1329,6 +1329,13 @@ async def synthesize_voice(text: str, filename="temp.wav", speaker_id=8):
         print(f"[VOICEVOXエラー] {e}")
         return False
 
+# 🎵 BGM再生用のグローバル変数
+current_bgm = None
+bgm_queue = []
+is_playing_bgm = False
+playlists = {}  # プレイリスト保存用
+text_channel_bgm = {}  # テキストチャンネル用BGM
+
 # 🌸 Bot起動時
 @bot.event
 async def on_ready():
@@ -1353,13 +1360,382 @@ async def join_vc(interaction: discord.Interaction):
 # 🌸 VCから抜けるコマンド
 @bot.tree.command(name="leave", description="VCから抜けるよ〜！")
 async def leave(interaction: discord.Interaction):
-    global VC
+    global VC, current_bgm, bgm_queue, is_playing_bgm
     if VC:
+        # BGMを停止
+        if current_bgm:
+            current_bgm.stop()
+            current_bgm = None
+        bgm_queue.clear()
+        is_playing_bgm = False
+        
         await VC.disconnect()
         VC = None
         await interaction.response.send_message("VCから抜けたよ〜😴")
     else:
         await interaction.response.send_message("まだVCにいないみたい💦", ephemeral=True)
+
+# 🎵 BGMを再生するコマンド
+@bot.tree.command(name="play", description="BGMを再生するよ〜！")
+@app_commands.describe(url="YouTubeのURLまたは検索キーワード")
+async def play_bgm(interaction: discord.Interaction, url: str):
+    global VC, current_bgm, is_playing_bgm, bgm_queue
+    
+    if not VC:
+        await interaction.response.send_message("先にVCに入ってからね💦", ephemeral=True)
+        return
+    
+    await interaction.response.defer()
+    
+    try:
+        # YouTube URLかどうかチェック
+        if "youtube.com" in url or "youtu.be" in url:
+            # YouTubeプレイリストかどうかチェック
+            if "playlist" in url or "list=" in url:
+                # プレイリストの場合
+                await interaction.followup.send(f"🎵 YouTubeプレイリストを検出したよ〜！\nURL: {url}\n\n⚠️ プレイリストの詳細読み込みは現在開発中だよ💦\n個別の動画URLを `/play` で再生してね〜")
+                return
+            
+            # 通常のYouTube動画の場合
+            if ffmpeg_path is None:
+                await interaction.followup.send("ふぇぇ…ffmpegのパスが設定されてないよ〜💦", ephemeral=True)
+                return
+            
+            # 既存のBGMを停止
+            if current_bgm:
+                current_bgm.stop()
+            
+            # YouTubeから音声を取得して再生
+            current_bgm = discord.FFmpegPCMAudio(url, executable=ffmpeg_path)
+            VC.play(current_bgm)
+            is_playing_bgm = True
+            
+            await interaction.followup.send(f"🎵 YouTubeのBGMを再生中だよ〜！\nURL: {url}")
+            
+        else:
+            # 検索キーワードの場合（YouTube検索）
+            search_url = f"https://www.youtube.com/results?search_query={url.replace(' ', '+')}"
+            await interaction.followup.send(f"🔍 YouTubeで検索中だよ〜！\nキーワード: {url}\n検索URL: {search_url}")
+            
+    except Exception as e:
+        await interaction.followup.send(f"ふぇぇ…BGMの再生に失敗しちゃったよ〜💦\nエラー: {e}", ephemeral=True)
+
+# 🎵 BGMを停止するコマンド
+@bot.tree.command(name="stop", description="BGMを停止するよ〜！")
+async def stop_bgm(interaction: discord.Interaction):
+    global VC, current_bgm, is_playing_bgm
+    
+    if not VC:
+        await interaction.response.send_message("VCにいないよ💦", ephemeral=True)
+        return
+    
+    if current_bgm and is_playing_bgm:
+        current_bgm.stop()
+        current_bgm = None
+        is_playing_bgm = False
+        await interaction.response.send_message("🛑 BGMを停止したよ〜！")
+    else:
+        await interaction.response.send_message("BGMは再生されてないよ💦", ephemeral=True)
+
+# 🎵 BGMの音量を調整するコマンド
+@bot.tree.command(name="volume", description="BGMの音量を調整するよ〜！")
+@app_commands.describe(level="音量レベル（0-100）")
+async def set_volume(interaction: discord.Interaction, level: int):
+    global VC
+    
+    if not VC:
+        await interaction.response.send_message("VCにいないよ💦", ephemeral=True)
+        return
+    
+    if level < 0 or level > 100:
+        await interaction.response.send_message("音量は0〜100の間で設定してね💦", ephemeral=True)
+        return
+    
+    try:
+        # 音量を設定（0.0〜1.0の範囲）
+        volume = level / 100.0
+        VC.source.volume = volume
+        await interaction.response.send_message(f"🔊 音量を {level}% に設定したよ〜！")
+    except Exception as e:
+        await interaction.response.send_message(f"音量の調整に失敗しちゃったよ〜💦\nエラー: {e}", ephemeral=True)
+
+# 🎵 BGMの状態を確認するコマンド
+@bot.tree.command(name="nowplaying", description="現在再生中のBGMを確認するよ〜！")
+async def now_playing(interaction: discord.Interaction):
+    global VC, is_playing_bgm, text_channel_bgm
+    
+    channel_id = interaction.channel_id
+    
+    if VC and is_playing_bgm:
+        await interaction.response.send_message("🎵 VCでBGMを再生中だよ〜！")
+    elif channel_id in text_channel_bgm:
+        await interaction.response.send_message(f"🎵 このチャンネルでBGMを再生中だよ〜！\nURL: {text_channel_bgm[channel_id]}")
+    else:
+        await interaction.response.send_message("BGMは再生されてないよ💦", ephemeral=True)
+
+# 🎵 プレイリストを作成するコマンド
+@bot.tree.command(name="playlist_create", description="プレイリストを作成するよ〜！")
+@app_commands.describe(name="プレイリスト名")
+async def create_playlist(interaction: discord.Interaction, name: str):
+    global playlists
+    
+    user_id = interaction.user.id
+    if user_id not in playlists:
+        playlists[user_id] = {}
+    
+    if name in playlists[user_id]:
+        await interaction.response.send_message(f"プレイリスト '{name}' は既に存在するよ💦", ephemeral=True)
+        return
+    
+    playlists[user_id][name] = []
+    await interaction.response.send_message(f"🎵 プレイリスト '{name}' を作成したよ〜！")
+
+# 🎵 プレイリストに曲を追加するコマンド
+@bot.tree.command(name="playlist_add", description="プレイリストに曲を追加するよ〜！")
+@app_commands.describe(playlist_name="プレイリスト名", url="YouTubeのURL")
+async def add_to_playlist(interaction: discord.Interaction, playlist_name: str, url: str):
+    global playlists
+    
+    user_id = interaction.user.id
+    if user_id not in playlists or playlist_name not in playlists[user_id]:
+        await interaction.response.send_message(f"プレイリスト '{playlist_name}' が見つからないよ💦", ephemeral=True)
+        return
+    
+    if "youtube.com" not in url and "youtu.be" not in url:
+        await interaction.response.send_message("YouTubeのURLを入力してね💦", ephemeral=True)
+        return
+    
+    playlists[user_id][playlist_name].append(url)
+    await interaction.response.send_message(f"🎵 プレイリスト '{playlist_name}' に曲を追加したよ〜！\n現在の曲数: {len(playlists[user_id][playlist_name])}")
+
+# 🎵 プレイリストを表示するコマンド
+@bot.tree.command(name="playlist_show", description="プレイリストを表示するよ〜！")
+@app_commands.describe(playlist_name="プレイリスト名")
+async def show_playlist(interaction: discord.Interaction, playlist_name: str):
+    global playlists
+    
+    user_id = interaction.user.id
+    if user_id not in playlists or playlist_name not in playlists[user_id]:
+        await interaction.response.send_message(f"プレイリスト '{playlist_name}' が見つからないよ💦", ephemeral=True)
+        return
+    
+    playlist = playlists[user_id][playlist_name]
+    if not playlist:
+        await interaction.response.send_message(f"プレイリスト '{playlist_name}' は空だよ💦", ephemeral=True)
+        return
+    
+    embed = discord.Embed(title=f"🎵 プレイリスト: {playlist_name}", color=0xFF69B4)
+    for i, url in enumerate(playlist, 1):
+        embed.add_field(name=f"曲 {i}", value=url, inline=False)
+    
+    await interaction.response.send_message(embed=embed)
+
+# 🎵 プレイリストを再生するコマンド
+@bot.tree.command(name="playlist_play", description="プレイリストを再生するよ〜！")
+@app_commands.describe(playlist_name="プレイリスト名")
+async def play_playlist(interaction: discord.Interaction, playlist_name: str):
+    global playlists, bgm_queue
+    
+    user_id = interaction.user.id
+    if user_id not in playlists or playlist_name not in playlists[user_id]:
+        await interaction.response.send_message(f"プレイリスト '{playlist_name}' が見つからないよ💦", ephemeral=True)
+        return
+    
+    playlist = playlists[user_id][playlist_name]
+    if not playlist:
+        await interaction.response.send_message(f"プレイリスト '{playlist_name}' は空だよ💦", ephemeral=True)
+        return
+    
+    # プレイリストをキューに追加
+    bgm_queue.extend(playlist)
+    await interaction.response.send_message(f"🎵 プレイリスト '{playlist_name}' をキューに追加したよ〜！\n曲数: {len(playlist)}")
+
+# 🎵 テキストチャンネルでBGMを流すコマンド
+@bot.tree.command(name="bgm", description="テキストチャンネルでBGMを流すよ〜！")
+@app_commands.describe(url="YouTubeのURL")
+async def text_channel_bgm(interaction: discord.Interaction, url: str):
+    global text_channel_bgm
+    
+    if "youtube.com" not in url and "youtu.be" not in url:
+        await interaction.response.send_message("YouTubeのURLを入力してね💦", ephemeral=True)
+        return
+    
+    channel_id = interaction.channel_id
+    text_channel_bgm[channel_id] = url
+    
+    embed = discord.Embed(title="🎵 BGMを設定したよ〜！", description=f"このチャンネルでBGMを流すよ！", color=0xFF69B4)
+    embed.add_field(name="URL", value=url, inline=False)
+    embed.add_field(name="停止方法", value="`/bgm_stop` で停止できるよ〜", inline=False)
+    
+    await interaction.response.send_message(embed=embed)
+
+# 🎵 テキストチャンネルのBGMを停止するコマンド
+@bot.tree.command(name="bgm_stop", description="テキストチャンネルのBGMを停止するよ〜！")
+async def stop_text_bgm(interaction: discord.Interaction):
+    global text_channel_bgm
+    
+    channel_id = interaction.channel_id
+    if channel_id in text_channel_bgm:
+        del text_channel_bgm[channel_id]
+        await interaction.response.send_message("🛑 このチャンネルのBGMを停止したよ〜！")
+    else:
+        await interaction.response.send_message("このチャンネルではBGMが流れてないよ💦", ephemeral=True)
+
+# 🎵 プレイリスト一覧を表示するコマンド
+@bot.tree.command(name="playlist_list", description="自分のプレイリスト一覧を表示するよ〜！")
+async def list_playlists(interaction: discord.Interaction):
+    global playlists
+    
+    user_id = interaction.user.id
+    if user_id not in playlists or not playlists[user_id]:
+        await interaction.response.send_message("プレイリストがまだないよ💦\n`/playlist_create` で作成してね〜", ephemeral=True)
+        return
+    
+    embed = discord.Embed(title="🎵 あなたのプレイリスト一覧", color=0xFF69B4)
+    for name, songs in playlists[user_id].items():
+        embed.add_field(name=name, value=f"曲数: {len(songs)}", inline=True)
+    
+    await interaction.response.send_message(embed=embed)
+
+# 🎵 キューを表示するコマンド
+@bot.tree.command(name="queue", description="再生キューを表示するよ〜！")
+async def show_queue(interaction: discord.Interaction):
+    global bgm_queue
+    
+    if not bgm_queue:
+        await interaction.response.send_message("キューは空だよ💦", ephemeral=True)
+        return
+    
+    embed = discord.Embed(title="🎵 再生キュー", color=0xFF69B4)
+    for i, url in enumerate(bgm_queue[:10], 1):  # 最初の10曲を表示
+        embed.add_field(name=f"曲 {i}", value=url, inline=False)
+    
+    if len(bgm_queue) > 10:
+        embed.add_field(name="...", value=f"他 {len(bgm_queue) - 10} 曲", inline=False)
+    
+    await interaction.response.send_message(embed=embed)
+
+# 🎵 キューをクリアするコマンド
+@bot.tree.command(name="queue_clear", description="再生キューをクリアするよ〜！")
+async def clear_queue(interaction: discord.Interaction):
+    global bgm_queue
+    
+    if not bgm_queue:
+        await interaction.response.send_message("キューは既に空だよ💦", ephemeral=True)
+        return
+    
+    bgm_queue.clear()
+    await interaction.response.send_message("🗑️ キューをクリアしたよ〜！")
+
+# 🎵 キューに曲を追加するコマンド
+@bot.tree.command(name="queue_add", description="キューに曲を追加するよ〜！")
+@app_commands.describe(url="YouTubeのURL")
+async def add_to_queue(interaction: discord.Interaction, url: str):
+    global bgm_queue
+    
+    if "youtube.com" not in url and "youtu.be" not in url:
+        await interaction.response.send_message("YouTubeのURLを入力してね💦", ephemeral=True)
+        return
+    
+    bgm_queue.append(url)
+    await interaction.response.send_message(f"🎵 キューに曲を追加したよ〜！\n現在のキュー数: {len(bgm_queue)}")
+
+# 🎵 YouTubeプレイリストを読み込むコマンド
+@bot.tree.command(name="playlist_youtube", description="YouTubeプレイリストを読み込むよ〜！")
+@app_commands.describe(url="YouTubeプレイリストのURL")
+async def load_youtube_playlist(interaction: discord.Interaction, url: str):
+    global bgm_queue
+    
+    if "youtube.com" not in url or ("playlist" not in url and "list=" not in url):
+        await interaction.response.send_message("YouTubeプレイリストのURLを入力してね💦", ephemeral=True)
+        return
+    
+    await interaction.response.defer()
+    
+    try:
+        # プレイリストURLから動画IDを抽出（簡易版）
+        if "list=" in url:
+            # プレイリストIDを抽出
+            import re
+            list_match = re.search(r'list=([^&]+)', url)
+            if list_match:
+                playlist_id = list_match.group(1)
+                
+                # プレイリストの情報を表示
+                embed = discord.Embed(title="🎵 YouTubeプレイリストを検出したよ〜！", color=0xFF69B4)
+                embed.add_field(name="プレイリストID", value=playlist_id, inline=False)
+                embed.add_field(name="URL", value=url, inline=False)
+                embed.add_field(name="注意", value="⚠️ 現在はプレイリストの情報表示のみ対応中だよ💦\n個別の動画URLを `/queue_add` で追加してね〜", inline=False)
+                
+                await interaction.followup.send(embed=embed)
+            else:
+                await interaction.followup.send("プレイリストIDを抽出できなかったよ💦", ephemeral=True)
+        else:
+            await interaction.followup.send("プレイリストURLの形式が正しくないよ💦", ephemeral=True)
+            
+    except Exception as e:
+        await interaction.followup.send(f"ふぇぇ…プレイリストの読み込みに失敗しちゃったよ〜💦\nエラー: {e}", ephemeral=True)
+
+# 🎵 プレイリストを削除するコマンド
+@bot.tree.command(name="playlist_delete", description="プレイリストを削除するよ〜！")
+@app_commands.describe(playlist_name="プレイリスト名")
+async def delete_playlist(interaction: discord.Interaction, playlist_name: str):
+    global playlists
+    
+    user_id = interaction.user.id
+    if user_id not in playlists or playlist_name not in playlists[user_id]:
+        await interaction.response.send_message(f"プレイリスト '{playlist_name}' が見つからないよ💦", ephemeral=True)
+        return
+    
+    del playlists[user_id][playlist_name]
+    await interaction.response.send_message(f"🗑️ プレイリスト '{playlist_name}' を削除したよ〜！")
+
+# 🎵 プレイリストから曲を削除するコマンド
+@bot.tree.command(name="playlist_remove", description="プレイリストから曲を削除するよ〜！")
+@app_commands.describe(playlist_name="プレイリスト名", song_number="曲番号（1から始まる）")
+async def remove_from_playlist(interaction: discord.Interaction, playlist_name: str, song_number: int):
+    global playlists
+    
+    user_id = interaction.user.id
+    if user_id not in playlists or playlist_name not in playlists[user_id]:
+        await interaction.response.send_message(f"プレイリスト '{playlist_name}' が見つからないよ💦", ephemeral=True)
+        return
+    
+    playlist = playlists[user_id][playlist_name]
+    if song_number < 1 or song_number > len(playlist):
+        await interaction.response.send_message(f"曲番号は1〜{len(playlist)}の間で指定してね💦", ephemeral=True)
+        return
+    
+    removed_song = playlist.pop(song_number - 1)
+    await interaction.response.send_message(f"🗑️ プレイリスト '{playlist_name}' から曲を削除したよ〜！\n削除した曲: {removed_song}")
+
+# 🎵 プレイリストをエクスポートするコマンド
+@bot.tree.command(name="playlist_export", description="プレイリストをエクスポートするよ〜！")
+@app_commands.describe(playlist_name="プレイリスト名")
+async def export_playlist(interaction: discord.Interaction, playlist_name: str):
+    global playlists
+    
+    user_id = interaction.user.id
+    if user_id not in playlists or playlist_name not in playlists[user_id]:
+        await interaction.response.send_message(f"プレイリスト '{playlist_name}' が見つからないよ💦", ephemeral=True)
+        return
+    
+    playlist = playlists[user_id][playlist_name]
+    if not playlist:
+        await interaction.response.send_message(f"プレイリスト '{playlist_name}' は空だよ💦", ephemeral=True)
+        return
+    
+    # プレイリストをテキスト形式でエクスポート
+    export_text = f"# プレイリスト: {playlist_name}\n"
+    for i, url in enumerate(playlist, 1):
+        export_text += f"{i}. {url}\n"
+    
+    # ファイルとして送信
+    import io
+    file = io.StringIO(export_text)
+    discord_file = discord.File(file, filename=f"{playlist_name}.txt")
+    
+    await interaction.response.send_message(f"📁 プレイリスト '{playlist_name}' をエクスポートしたよ〜！", file=discord_file)
 
 # 🌸 メッセージが来たら読み上げる！
 @bot.event

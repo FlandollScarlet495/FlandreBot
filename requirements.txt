@@ -6,3 +6,5 @@ beautifulsoup4
 pyopenjtalk
 soundfile
 bs4
+yt-dlp
+PyNaCl
