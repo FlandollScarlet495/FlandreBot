@@ -72,13 +72,17 @@ TENOR_SEARCH_URL = "https://g.tenor.com/v1/search"
 
 # 無料AI API設定
 HUGGINGFACE_API_KEY = os.getenv("HUGGINGFACE_API_KEY")  # 無料で取得可能
+UNSPLASH_API_KEY = os.getenv("UNSPLASH_API_KEY")  # 無料で取得可能
 
 if HUGGINGFACE_API_KEY:
     print("✅ Hugging Face APIが設定されました！無料AIチャット機能が使えます。")
 else:
     print("⚠️ Hugging Face APIキーが設定されていません。無料で取得できます。")
 
-print("✅ 完全無料画像検索機能が利用可能です！（APIキー不要）")
+if UNSPLASH_API_KEY:
+    print("✅ Unsplash APIが設定されました！無料画像生成機能が使えます。")
+else:
+    print("⚠️ Unsplash APIキーが設定されていません。無料で取得できます。")
 
 # ffmpeg_pathをここで定義するよ！
 ffmpeg_path = os.getenv("FFMPEG_PATH")
@@ -276,112 +280,64 @@ async def reset_chat_history(interaction: discord.Interaction):
 
 # ===================== 新機能: 画像生成機能 =====================
 
-@bot.tree.command(name="generate_image", description="完全無料で画像を検索するよ♡")
+@bot.tree.command(name="generate_image", description="無料で画像を検索するよ♡")
 @app_commands.describe(prompt="検索したい画像のキーワードを入力してね")
 async def generate_image(interaction: discord.Interaction, prompt: str):
+    if not UNSPLASH_API_KEY:
+        await interaction.response.send_message("ごめんね、Unsplash APIキーが設定されてないよ💦\n無料で取得できるから設定してね！", ephemeral=True)
+        return
+    
     await interaction.response.defer()
     
     try:
-        # 複数の無料画像APIを試行
-        image_url = None
-        source_name = ""
+        headers = {"Authorization": f"Client-ID {UNSPLASH_API_KEY}"}
+        params = {
+            "query": prompt,
+            "per_page": 1,
+            "orientation": "landscape"
+        }
         
-        # 1. Pixabay API（無料、APIキー不要の代替方法）
-        try:
-            search_url = f"https://pixabay.com/api/?key=36897922-1234567890abcdef&q={urllib.parse.quote(prompt)}&image_type=photo&per_page=1&safesearch=true"
-            response = await asyncio.to_thread(requests.get, search_url, timeout=10)
-            
-            if response.status_code == 200:
-                data = response.json()
-                if data.get("hits"):
-                    image_url = data["hits"][0]["webformatURL"]
-                    source_name = "Pixabay"
-        except:
-            pass
-        
-        # 2. Unsplash（APIキー不要の方法）
-        if not image_url:
-            try:
-                search_url = f"https://source.unsplash.com/featured/?{urllib.parse.quote(prompt)}"
-                response = await asyncio.to_thread(requests.head, search_url, timeout=10)
-                
-                if response.status_code == 200:
-                    image_url = response.url
-                    source_name = "Unsplash"
-            except:
-                pass
-        
-        # 3. Pexels（APIキー不要の方法）
-        if not image_url:
-            try:
-                search_url = f"https://images.pexels.com/photos/search/{urllib.parse.quote(prompt)}/"
-                response = await asyncio.to_thread(requests.get, search_url, timeout=10)
-                
-                if response.status_code == 200 and BeautifulSoup:
-                    soup = BeautifulSoup(response.content, 'html.parser')
-                    img_tags = soup.find_all('img', class_='photo-item__img')
-                    if img_tags:
-                        image_url = img_tags[0].get('src')
-                        if image_url and not image_url.startswith('http'):
-                            image_url = "https://images.pexels.com" + image_url
-                        source_name = "Pexels"
-            except:
-                pass
-        
-        # 4. 代替画像（すべて失敗した場合）
-        if not image_url:
-            # カテゴリ別の代替画像
-            category_images = {
-                "猫": "https://placekitten.com/400/300",
-                "犬": "https://placedog.net/400/300",
-                "風景": "https://picsum.photos/400/300?random=1",
-                "花": "https://picsum.photos/400/300?random=2",
-                "空": "https://picsum.photos/400/300?random=3",
-                "海": "https://picsum.photos/400/300?random=4",
-                "山": "https://picsum.photos/400/300?random=5",
-                "都市": "https://picsum.photos/400/300?random=6",
-                "自然": "https://picsum.photos/400/300?random=7",
-                "動物": "https://placekitten.com/400/300",
-                "食べ物": "https://picsum.photos/400/300?random=8",
-                "車": "https://picsum.photos/400/300?random=9",
-                "建築": "https://picsum.photos/400/300?random=10"
-            }
-            
-            # キーワードに基づいてカテゴリを判定
-            for category, url in category_images.items():
-                if category in prompt:
-                    image_url = url
-                    source_name = "代替画像"
-                    break
-            
-            # デフォルト画像
-            if not image_url:
-                image_url = "https://picsum.photos/400/300?random=" + str(random.randint(1, 1000))
-                source_name = "ランダム画像"
-        
-        embed = discord.Embed(
-            title="🎨 完全無料画像検索結果",
-            description=f"**キーワード**: {prompt}",
-            color=0xFF69B4
+        response = await asyncio.to_thread(
+            requests.get,
+            "https://api.unsplash.com/search/photos",
+            headers=headers,
+            params=params
         )
-        embed.set_image(url=image_url)
-        embed.add_field(name="画像ソース", value=source_name, inline=True)
-        embed.set_footer(text=f"検索者: {interaction.user.display_name} | 完全無料・APIキー不要")
         
-        await interaction.followup.send(embed=embed)
+        if response.status_code == 200:
+            data = response.json()
+            if data["results"]:
+                photo = data["results"][0]
+                image_url = photo["urls"]["regular"]
+                photographer = photo["user"]["name"]
+                photo_url = photo["links"]["html"]
+                
+                embed = discord.Embed(
+                    title="🎨 画像検索結果（無料版）",
+                    description=f"**キーワード**: {prompt}",
+                    color=0xFF69B4
+                )
+                embed.set_image(url=image_url)
+                embed.add_field(name="撮影者", value=f"[{photographer}]({photo_url})", inline=True)
+                embed.set_footer(text=f"検索者: {interaction.user.display_name} | Unsplash使用")
+                
+                await interaction.followup.send(embed=embed)
+            else:
+                await interaction.followup.send("そのキーワードで画像が見つからなかったよ💦", ephemeral=True)
+        else:
+            embed = discord.Embed(
+                title="🎨 画像検索結果（無料版）",
+                description=f"**キーワード**: {prompt}\n\nAPIエラーのため、代替画像を表示してるよ♡",
+                color=0xFF69B4
+            )
+            embed.set_image(url="https://via.placeholder.com/400x300/FF69B4/FFFFFF?text=ふらんちゃん")
+            embed.set_footer(text=f"検索者: {interaction.user.display_name} | 代替画像")
+            
+            await interaction.followup.send(embed=embed)
         
     except Exception as e:
         logger.error(f"画像検索エラー: {e}")
-        # エラー時は確実に動作する画像を表示
-        embed = discord.Embed(
-            title="🎨 完全無料画像検索結果",
-            description=f"**キーワード**: {prompt}\n\nエラーが起きたけど、ふらんちゃんが代わりに画像を用意したよ♡",
-            color=0xFF69B4
-        )
-        embed.set_image(url="https://picsum.photos/400/300?random=" + str(random.randint(1, 1000)))
-        embed.set_footer(text=f"検索者: {interaction.user.display_name} | エラー時代替画像")
-        
-        await interaction.followup.send(embed=embed)
+        await interaction.followup.send("ごめんね、画像検索でエラーが起きたよ💦", ephemeral=True)
 
 # ===================== 新機能: 翻訳機能の拡張 =====================
 
@@ -867,49 +823,256 @@ except Exception as e:
     logger.error(f"カスタムコマンド読み込みエラー: {e}")
     custom_commands = {}
 
-# ===================== 既存のコードはここから続く =====================
+# ===================== GIF検索機能 =====================
 
-# GIF検索コマンド（スラッシュコマンド）
 @bot.tree.command(name="gif", description="キーワードでGIFを検索するよ！")
-@discord.app_commands.describe(keyword="検索したいキーワードを入力してね") # スラッシュコマンドの引数の説明だよ
-async def gif(interaction: discord.Interaction, keyword: str): # 引数名を 'search_query' から 'keyword' に変更したよ
-    # スラッシュコマンドは、応答を返すまでに時間がかかるとエラーになることがあるから、
-    # まずは「思考中...」みたいなメッセージを送って、処理中にするよ。
-    await interaction.response.defer() 
+@discord.app_commands.describe(keyword="検索したいキーワードを入力してね")
+async def gif(interaction: discord.Interaction, keyword: str):
+    await interaction.response.defer()
 
-    # TenorにGIFを探してもらうためのお願い（リクエスト）を作るよ
     params = {
         'key': TENOR_API_KEY,
-        'q': keyword, # 検索したいキーワードだよ
-        'limit': 10,       # 最大で10個のGIFを探してほしいってお願いするよ
-        'contentfilter': 'medium'      # 一般向けのGIFだけにする設定だよ
+        'q': keyword,
+        'limit': 10,
+        'contentfilter': 'medium'
     }
 
     try:
-        # Tenorに実際にお願いを送って、返事を待つよ
         response = requests.get(TENOR_SEARCH_URL, params=params)
-        response.raise_for_status() # もしエラーがあったら教えてくれるよ
+        response.raise_for_status()
 
-        # Tenorからの返事をJSONっていう形に変換するよ
         data = response.json()
 
-        # 返事の中にGIFがあるかチェックするよ
         if data.get('results') and len(data['results']) > 0:
-            # 見つかったGIFの中から、ランダムに1つ選ぶよ
             gif_choice = random.choice(data['results'])
             gif_url = gif_choice['media'][0]['gif']['url']
-            
-            # 選んだGIFのURLをDiscordに送るよ！
-            await interaction.followup.send(gif_url) # deferを使った場合、followup.sendを使うよ
+
+            await interaction.followup.send(gif_url)
         else:
-            # もし見つからなかったら、ごめんねって伝えるよ
             await interaction.followup.send(f'ごめんね、**{keyword}** のGIFは見つからなかったよ…')
 
     except requests.exceptions.RequestException as e:
-        print(f"Tenor APIとの通信エラーだよ: {e}")
+        logger.error(f"Tenor API通信エラー: {e}")
         await interaction.followup.send('Tenorと通信できなかったみたい…ごめんね！')
     except Exception as e:
-        print(f"エラーが発生したよ: {e}")
+        logger.error(f"GIF検索エラー: {e}")
         await interaction.followup.send('何かエラーが起きちゃったみたい…ごめんね！')
 
-# ... existing code ...
+# ===================== 基本コマンド =====================
+
+@bot.tree.command(name="hello", description="ふらんちゃんがあいさつするよ♡")
+async def hello(interaction: discord.Interaction):
+    await interaction.response.send_message("こんにちはっ、ふらんちゃんだよ♡")
+
+@bot.tree.command(name="ping", description="ふらんちゃんがネットとDiscordの応答速度をチェックするよ♡")
+async def ping(interaction: discord.Interaction):
+    await interaction.response.defer()
+
+    # 🌀 Discordの応答速度取得（WebSocket）
+    discord_latency = round(bot.latency * 1000)
+    if discord_latency > 150:
+        discord_comment = "今ちょっと遅いかも💦"
+    else:
+        discord_comment = "今はちょっと早〜い💨しゅびんしゅびん♪"
+
+    # 🌐 インターネットPing（Google）
+    proc = await asyncio.create_subprocess_exec(
+        "ping", "-n", "1", "www.google.com",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
+    stdout, stderr = await proc.communicate()
+
+    if proc.returncode != 0:
+        await interaction.followup.send("インターネット側のpingコマンドが失敗しちゃったよ…💔", ephemeral=True)
+        return
+
+    output = stdout.decode("cp932", errors="ignore")
+    match = re.search(r"平均 = (\d+)ms", output)
+    if not match:
+        match = re.search(r"Average = (\d+)ms", output)
+    if match:
+        net_latency = int(match.group(1))
+        if net_latency > 150:
+            net_comment = "インターネットも…ちょっと重いかも〜💦"
+        else:
+            net_comment = "ネットも軽やか♪すいすいっ🐬"
+    else:
+        await interaction.followup.send("インターネット遅延が取得できなかったの…🥺", ephemeral=True)
+        return
+
+    # 📡 両方の結果まとめて送信っ！
+    await interaction.followup.send(
+        f"🌐 インターネット遅延: `{net_latency}ms`　→ {net_comment}\n"
+        f"💬 Discord応答速度: `{discord_latency}ms`　→ {discord_comment}"
+    )
+
+@bot.tree.command(name="info", description="ふらんちゃんの情報を教えるよ♡")
+async def info(interaction: discord.Interaction):
+    embed = discord.Embed(title="ふらんちゃんBotの情報", description="ふらんちゃんはかわいいよ♡", color=0xFF69B4)
+    embed.add_field(name="バージョン", value="6.3", inline=False)
+    embed.add_field(name="開発者", value="けんすけ", inline=False)
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="help", description="ふらんちゃんの使い方を教えるよ♡")
+async def help_command(interaction: Interaction):
+    fields_per_embed = 25
+    embeds = []
+    for i in range(0, len(COMMANDS_INFO), fields_per_embed):
+        embed = Embed(
+            title="ふらんちゃんBotの使い方",
+            description="以下のコマンドが使えるよ♡",
+            color=0xFF69B4
+        )
+        for name, desc in COMMANDS_INFO[i:i+fields_per_embed]:
+            embed.add_field(name=name, value=desc, inline=False)
+        embeds.append(embed)
+    await interaction.response.send_message(embed=embeds[0])
+    for embed in embeds[1:]:
+        await interaction.followup.send(embed=embed)
+
+@bot.tree.command(name="shutdown", description="ふらんちゃんをシャットダウンするよ♡")
+async def shutdown(interaction: discord.Interaction):
+    # BotのオーナーIDを環境変数や直接指定で設定
+    owner_id_str = os.getenv("OWNER_ID")
+    try:
+        owner_id = int(owner_id_str) if owner_id_str is not None else None
+    except (TypeError, ValueError):
+        owner_id = None
+
+    if interaction.user.id != owner_id:
+        await interaction.response.send_message("ごめんね、オーナーしかこのコマンドは使えないよ！", ephemeral=True)
+        return
+
+    await interaction.response.send_message("ふらんちゃんをシャットダウンするね…おやすみなさい♡")
+    await bot.close()
+
+@bot.tree.command(name="dice", description="TRPG風サイコロ（例: 2d6+1）を振るよ！")
+@app_commands.describe(expression="サイコロの式（例: 2d6+1, 1d20, 3d6-2）")
+async def dice(interaction: discord.Interaction, expression: str):
+    # 例: 2d6+1, 1d20, 3d6-2 などに対応
+    import re
+    match = re.fullmatch(r"(\d{1,2})[dD](\d{1,3})([+-]\d+)?", expression.strip())
+    if not match:
+        await interaction.response.send_message("⚠️ サイコロの式は `NdM` または `NdM±X`（例: 2d6, 1d20, 3d6+2）みたいにしてね！", ephemeral=True)
+        return
+    n, m = int(match.group(1)), int(match.group(2))
+    mod = int(match.group(3)) if match.group(3) else 0
+    if n > 1001 or m > 10001:
+        await interaction.response.send_message("⚠️ 回数は最大1000回、面数は10000面までにしてねっ！", ephemeral=True)
+        return
+    rolls = [random.randint(1, m) for _ in range(n)]
+    total = sum(rolls) + mod
+    rolls_text = ', '.join(str(r) for r in rolls)
+    mod_text = f" {match.group(3)}" if match.group(3) else ""
+    await interaction.response.send_message(
+        f"🎲 サイコロ `{expression}` の結果だよ〜！\n"
+        f"出目: {rolls_text}{mod_text}\n"
+        f"合計: **{total}**"
+    )
+
+@bot.tree.command(name="omikuji", description="ふらんちゃんがおみくじ引いてあげるよ♡")
+async def omikuji(interaction: discord.Interaction):
+    fortunes = ["大吉♡", "中吉♪", "小吉〜", "凶…", "大凶！？"]
+    result = random.choice(fortunes)
+    await interaction.response.send_message(f"今日の運勢は… {result} だよっ！")
+
+@bot.tree.command(name="touhou", description="ふらんちゃんが東方のキャラを紹介するよ♡")
+async def touhou(interaction: discord.Interaction):
+    characters = [
+        "フランドール・スカーレット", "レミリア・スカーレット", "博麗霊夢", "霧雨魔理沙", "十六夜咲夜", 
+        "パチュリー・ノーレッジ", "チルノ", "魂魄妖夢", "西行寺幽々子", "八雲紫", "藤原妹紅",
+        "アリス・マーガトロイド", "紅美鈴", "犬走椛", "射命丸文", "風見幽香",
+        "古明地こいし", "古明地さとり", "東風谷早苗", "八坂神奈子", "洩矢諏訪子",
+        "鈴仙・優曇華院・イナバ", "八雲藍", "魂魄妖夢", "霊烏路空", "因幡てゐ",
+        "大妖精", "リリーホワイト", "リリーブラック", "ミスティア・ローレライ", "風見幽香",
+        "小野塚小町", "四季映姫・ヤマザナドゥ", "聖白蓮", "比那名居天子", "永江衣玖",
+        "伊吹萃香", "物部布都", "多々良小傘", "鍵山雛", "洩矢諏訪子",
+        "風見幽香", "八坂神奈子", "八雲藍", "八雲紫", "博麗霊夢",
+        "霧雨魔理沙", "十六夜咲夜", "パチュリー・ノーレッジ", "フランドール・スカーレット", "レミリア・スカーレット",
+        "チルノ", "魂魄妖夢", "西行寺幽々子", "藤原妹紅", "アリス・マーガトロイド",
+        "紅美鈴", "犬走椛", "射命丸文", "古明地こいし", "古明地さとり",
+        "東風谷早苗", "鈴仙・優曇華院・イナバ", "霊烏路空", "因幡てゐ", "大妖精",
+        "リリーホワイト", "リリーブラック", "ミスティア・ローレライ", "小野塚小町", "四季映姫・ヤマザナドゥ",
+        "フランドール・スカーレット", "フランドール・スカーレット", "フランドール・スカーレット", 
+        "フランドール・スカーレット", "フランドール・スカーレット", "フランドール・スカーレット", 
+        "フランドール・スカーレット", "フランドール・スカーレット", "フランドール・スカーレット", "フランドール・スカーレット"
+        "レミリア・スカーレット", "レミリア・スカーレット", "レミリア・スカーレット", "レミリア・スカーレット",
+        "レミリア・スカーレット", "レミリア・スカーレット", "レミリア・スカーレット", "レミリア・スカーレット",
+        "レミリア・スカーレット", "レミリア・スカーレット", "レミリア・スカーレット", "レミリア・スカーレット",
+        "古明地こいし", "古明地こいし", "古明地こいし", "古明地こいし", "古明地こいし", "古明地こいし",
+        "古明地こいし", "古明地こいし", "古明地こいし", "古明地こいし", "古明地こいし", "古明地こいし",
+        "古明地さとり", "古明地さとり", "古明地さとり", "古明地さとり", "古明地さとり", "古明地さとり",
+        "古明地さとり", "古明地さとり", "古明地さとり", "古明地さとり", "古明地さとり", "古明地さとり",
+    ]
+    chosen = random.choice(characters)
+    await interaction.response.send_message(f"今日のおすすめ東方キャラは… **{chosen}** だよ♡")
+
+@bot.tree.command(name="time", description="ふらんちゃんが今の時間をいろんな形で教えるよ♡")
+async def time_command(interaction: discord.Interaction):
+    # 現在時刻（UTCとJST）
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    jst = datetime.timezone(datetime.timedelta(hours=9))
+    now_jst = now_utc.astimezone(jst)
+
+    # 曜日（日本語＋英語）
+    youbi_jp = ["月曜日", "火曜日", "水曜日", "木曜日", "金曜日", "土曜日", "日曜日"]
+    weekday_index = now_jst.weekday()
+    youbi = youbi_jp[weekday_index]
+    youbi_en = now_jst.strftime("%A")  # e.g., Monday, Tuesday...
+
+    # 午前午後表示＋12時間制
+    am_pm = "午前" if now_jst.hour < 12 else "午後"
+    hour_12 = now_jst.hour % 12 or 12
+
+    # 幻想郷っぽい時間帯表現
+    if now_jst.hour < 5:
+        gensokyo_phase = "深い夜の帳（夜雀がささやく時刻）"
+    elif now_jst.hour < 8:
+        gensokyo_phase = "夜明け前（八雲紫が境界を渡る頃）"
+    elif now_jst.hour < 12:
+        gensokyo_phase = "朝霧の時間（霧雨魔理沙が空を飛ぶ頃）"
+    elif now_jst.hour < 17:
+        gensokyo_phase = "昼の幻想郷（紅魔館の紅茶タイム）"
+    elif now_jst.hour < 20:
+        gensokyo_phase = "夕暮れ時（博麗神社の鈴が鳴る頃）"
+    else:
+        gensokyo_phase = "宵の口（月が照らす紅魔館）"
+
+    # 各種フォーマット
+    formats = {
+        "📅 シンプル日付": now_jst.strftime("%Y/%m/%d"),
+        "🧸 日本式フル": now_jst.strftime(f"%Y年%m月%d日（{youbi} / {youbi_en}） {am_pm} {hour_12}時%M分%S秒"),
+        "⏱️ ISO形式": now_jst.isoformat(sep=' ', timespec='seconds'),
+        "⌚ 24時間表記": now_jst.strftime("%H:%M:%S"),
+        "🕰️ 12時間表記": f"{am_pm} {hour_12}:{now_jst.minute:02}:{now_jst.second:02}",
+        "📆 英語スタイル": now_jst.strftime("%A, %B %d, %Y %I:%M:%S %p"),
+        "🪐 Unixタイムスタンプ": str(int(now_jst.timestamp()))
+    }
+
+    # メッセージ作成
+    msg = "**⏳ ふらんちゃん時空レポートだよっ♡**\n\n"
+    msg += f"🗾 **日本時間（JST）**: `{now_jst.strftime('%Y年%m月%d日 %H:%M:%S')}（{youbi} / {youbi_en}）`\n"
+    msg += f"🌐 **世界標準時（UTC）**: `{now_utc.strftime('%Y-%m-%d %H:%M:%S')}`\n"
+    msg += f"🌙 **幻想郷時間**: `{gensokyo_phase}`\n\n"
+
+    for label, val in formats.items():
+        msg += f"{label}: `{val}`\n"
+
+    msg += "\n🌸 今日の幻想郷もまったり時間が流れてるねっ♪ どの時刻が一番好き〜？"
+
+    await interaction.response.send_message(msg)
+
+# ===================== Bot起動 =====================
+
+if __name__ == "__main__":
+    threading.Thread(target=console_loop, daemon=True).start()
+    TOKEN = os.getenv("DISCORD_TOKEN")
+    if not TOKEN:
+        print("DISCORD_TOKENが.envに設定されていません！")
+        sys.exit(1)
+    try:
+        bot.run(TOKEN)
+    except Exception as e:
+        print(f"Bot起動エラー: {e}")
+        traceback.print_exc()
