@@ -22,6 +22,9 @@ from discord import app_commands, Interaction, Embed # DiscordのAPIを使用す
 from discord.abc import Messageable
 from dotenv import load_dotenv # 環境変数を読み込むためのライブラリ
 from discord.ext import tasks # ランクコマンドで使うためのモジュール
+from collections import deque
+from collections import defaultdict
+import psutil
 
 # BeautifulSoupのインポートを追加
 try:
@@ -95,7 +98,26 @@ if voicevox_path is None:
 with open("helps.json", "r", encoding="utf-8") as f:
     data = json.load(f)
 
-COMMANDS_INFO = [(cmd["name"], cmd["description"]) for cmd in data["helps"]]
+COMMANDS_INFO = data["helps"]
+
+# コマンド名リスト（エイリアス含む）
+COMMAND_NAMES = [cmd["name"] for cmd in COMMANDS_INFO]
+ALIASES = {alias: cmd["name"] for cmd in COMMANDS_INFO if "aliases" in cmd for alias in cmd["aliases"]}
+
+# カテゴリごとにコマンドをまとめる
+CATEGORY_COMMANDS = defaultdict(list)
+for cmd in COMMANDS_INFO:
+    cat = cmd.get("category", "その他")
+    CATEGORY_COMMANDS[cat].append(cmd)
+
+# オートコンプリート用
+async def help_autocomplete(interaction: Interaction, current: str):
+    # 入力途中の文字列でフィルタ
+    results = []
+    for cmd in COMMANDS_INFO:
+        if cmd["name"].startswith(current) or any(alias.startswith(current) for alias in cmd.get("aliases", [])):
+            results.append(app_commands.Choice(name=cmd["name"], value=cmd["name"]))
+    return results[:25]
 
 # CONSOLE_OUTPUT_CHANNEL_IDの読み込みと型チェック
 raw_console_output_channel_id = os.getenv("CONSOLE_OUTPUT_CHANNEL_ID")
@@ -184,16 +206,11 @@ async def ai_chat(interaction: discord.Interaction, message: str):
     if not HUGGINGFACE_API_KEY:
         await interaction.response.send_message("ごめんね、Hugging Face APIキーが設定されてないよ💦\n無料で取得できるから設定してね！", ephemeral=True)
         return
-    
     await interaction.response.defer()
-    
     try:
-        # ユーザー固有のチャット履歴を取得
         user_id = interaction.user.id
         if user_id not in bot.chat_history:
             bot.chat_history[user_id] = []
-        
-        # ふらんちゃんの性格設定を含むプロンプト
         character_prompt = """あなたは「ふらんちゃん」という、東方Projectのフランドール・スカーレット風のキャラクターです。
 特徴：
 - かわいらしく、少し天然な性格
@@ -205,8 +222,6 @@ async def ai_chat(interaction: discord.Interaction, message: str):
 - 時々「破壊」について言及するが、優しい破壊
 
 ユーザーの質問: """
-        
-        # Hugging Face APIを使用（無料）
         headers = {"Authorization": f"Bearer {HUGGINGFACE_API_KEY}"}
         payload = {
             "inputs": character_prompt + message,
@@ -216,50 +231,39 @@ async def ai_chat(interaction: discord.Interaction, message: str):
                 "do_sample": True
             }
         }
-        
-        # 無料のチャットモデルを使用
-        response = await asyncio.to_thread(
-            requests.post,
-            "https://api-inference.huggingface.co/models/microsoft/DialoGPT-medium",
-            headers=headers,
-            json=payload
-        )
-        
-        if response.status_code == 200:
-            ai_response = response.json()[0]["generated_text"]
-            # プロンプト部分を除去
-            ai_response = ai_response.replace(character_prompt + message, "").strip()
-            
-            # ふらんちゃんらしい応答に調整
-            if not ai_response:
-                ai_response = "うふふ♡ 何かお話ししたいことがあるの？"
-        else:
-            # APIエラーの場合は代替応答
-            responses = [
-                "うふふ♡ 今はちょっと忙しいの！",
-                "えへへ♪ また後で話そうね！",
-                "ふらんちゃんは元気だよ♡",
-                "何かお手伝いできることあるかな？"
-            ]
-            ai_response = random.choice(responses)
-        
-        # チャット履歴に追加
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                "https://api-inference.huggingface.co/models/microsoft/DialoGPT-medium",
+                headers=headers,
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=30)
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    ai_response = data[0]["generated_text"]
+                    ai_response = ai_response.replace(character_prompt + message, "").strip()
+                    if not ai_response:
+                        ai_response = "うふふ♡ 何かお話ししたいことがあるの？"
+                else:
+                    responses = [
+                        "うふふ♡ 今はちょっと忙しいの！",
+                        "えへへ♪ また後で話そうね！",
+                        "ふらんちゃんは元気だよ♡",
+                        "何かお手伝いできることあるかな？"
+                    ]
+                    ai_response = random.choice(responses)
         bot.chat_history[user_id].append({"role": "user", "content": message})
         bot.chat_history[user_id].append({"role": "assistant", "content": ai_response})
-        
-        # 履歴が長すぎる場合は古いものを削除
         if len(bot.chat_history[user_id]) > 20:
             bot.chat_history[user_id] = bot.chat_history[user_id][-10:]
-        
         embed = discord.Embed(
             title="🤖 ふらんちゃんAI（無料版）",
             description=ai_response,
             color=0xFF69B4
         )
         embed.set_footer(text=f"ユーザー: {interaction.user.display_name} | 無料AI使用")
-        
         await interaction.followup.send(embed=embed)
-        
     except Exception as e:
         logger.error(f"AIチャットエラー: {e}")
         await interaction.followup.send("ごめんね、AIチャットでエラーが起きたよ💦", ephemeral=True)
@@ -281,9 +285,7 @@ async def generate_image(interaction: discord.Interaction, prompt: str):
     if not UNSPLASH_API_KEY:
         await interaction.response.send_message("ごめんね、Unsplash APIキーが設定されてないよ💦\n無料で取得できるから設定してね！", ephemeral=True)
         return
-    
     await interaction.response.defer()
-    
     try:
         headers = {"Authorization": f"Client-ID {UNSPLASH_API_KEY}"}
         params = {
@@ -291,45 +293,44 @@ async def generate_image(interaction: discord.Interaction, prompt: str):
             "per_page": 1,
             "orientation": "landscape"
         }
-        
-        response = await asyncio.to_thread(
-            requests.get,
-            "https://api.unsplash.com/search/photos",
-            headers=headers,
-            params=params
-        )
-        
-        if response.status_code == 200:
-            data = response.json()
-            if data["results"]:
-                photo = data["results"][0]
-                image_url = photo["urls"]["regular"]
-                photographer = photo["user"]["name"]
-                photo_url = photo["links"]["html"]
-                
-                embed = discord.Embed(
-                    title="🎨 画像検索結果（無料版）",
-                    description=f"**キーワード**: {prompt}",
-                    color=0xFF69B4
-                )
-                embed.set_image(url=image_url)
-                embed.add_field(name="撮影者", value=f"[{photographer}]({photo_url})", inline=True)
-                embed.set_footer(text=f"検索者: {interaction.user.display_name} | Unsplash使用")
-                
-                await interaction.followup.send(embed=embed)
-            else:
-                await interaction.followup.send("そのキーワードで画像が見つからなかったよ💦", ephemeral=True)
-        else:
-            embed = discord.Embed(
-                title="🎨 画像検索結果（無料版）",
-                description=f"**キーワード**: {prompt}\n\nAPIエラーのため、代替画像を表示してるよ♡",
-                color=0xFF69B4
-            )
-            embed.set_image(url="https://via.placeholder.com/400x300/FF69B4/FFFFFF?text=ふらんちゃん")
-            embed.set_footer(text=f"検索者: {interaction.user.display_name} | 代替画像")
-            
-            await interaction.followup.send(embed=embed)
-        
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                "https://api.unsplash.com/search/photos",
+                headers=headers,
+                params=params,
+                timeout=aiohttp.ClientTimeout(total=20)
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    if data["results"]:
+                        photo = data["results"][0]
+                        image_url = photo["urls"]["regular"]
+                        photographer = photo["user"]["name"]
+                        photo_url = photo["links"]["html"]
+                        embed = discord.Embed(
+                            title="🎨 画像検索結果（無料版）",
+                            description=f"**キーワード**: {prompt}",
+                            color=0xFF69B4
+                        )
+                        embed.set_image(url=image_url)
+                        embed.add_field(name="撮影者", value=f"[{photographer}]({photo_url})", inline=True)
+                        embed.set_footer(text=f"検索者: {interaction.user.display_name} | Unsplash使用")
+                        await interaction.followup.send(embed=embed)
+                        return
+                    else:
+                        await interaction.followup.send("そのキーワードで画像が見つからなかったよ💦", ephemeral=True)
+                        return
+                else:
+                    embed = discord.Embed(
+                        title="🎨 画像検索結果（無料版）",
+                        description=f"**キーワード**: {prompt}\n\nAPIエラーのため、代替画像を表示してるよ♡",
+                        color=0xFF69B4
+                    )
+                    embed.set_image(url="https://via.placeholder.com/400x300/FF69B4/FFFFFF?text=ふらんちゃん")
+                    embed.set_footer(text=f"検索者: {interaction.user.display_name} | 代替画像")
+                    await interaction.followup.send(embed=embed)
+                    return
     except Exception as e:
         logger.error(f"画像検索エラー: {e}")
         await interaction.followup.send("ごめんね、画像検索でエラーが起きたよ💦", ephemeral=True)
@@ -393,15 +394,12 @@ async def search_music(interaction: discord.Interaction, query: str):
     if not VC:
         await interaction.response.send_message("先にVCに入ってからね💦", ephemeral=True)
         return
-    
     await interaction.response.defer()
-    
     try:
         if not yt_dlp:
             await interaction.followup.send("yt-dlpがインストールされていないよ💦", ephemeral=True)
             return
-        
-        # yt-dlpで検索
+        # yt-dlpで検索（同期→非同期化）
         ydl_opts = {
             'format': 'bestaudio/best',
             'noplaylist': True,
@@ -409,42 +407,34 @@ async def search_music(interaction: discord.Interaction, query: str):
             'no_warnings': True,
             'extract_flat': True,
         }
-        
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # 検索結果を取得
-            search_results = ydl.extract_info(f"ytsearch1:{query}", download=False)
-            
-            if 'entries' in search_results and search_results['entries']:
-                video = search_results['entries'][0]
-                video_url = f"https://www.youtube.com/watch?v={video['id']}"
-                title = video.get('title', 'Unknown Title')
-                
-                # 既存のBGMを停止
-                global current_bgm, is_playing_bgm
-                if current_bgm:
-                    current_bgm.stop()
-                
-                # 新しいBGMを再生
-                current_bgm = discord.FFmpegPCMAudio(video_url, executable=ffmpeg_path)
-                VC.play(current_bgm)
-                is_playing_bgm = True
-                
-                embed = discord.Embed(
-                    title="🎵 音楽再生中",
-                    description=f"**{title}**",
-                    color=0xFF69B4
-                )
-                embed.add_field(name="URL", value=video_url, inline=False)
-                
-                await interaction.followup.send(embed=embed)
-            else:
-                await interaction.followup.send(f"「{query}」の検索結果が見つからなかったよ💦", ephemeral=True)
-                
+        def ytdlp_search():
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                return ydl.extract_info(f"ytsearch1:{query}", download=False)
+        search_results = await asyncio.to_thread(ytdlp_search)
+        if 'entries' in search_results and search_results['entries']:
+            video = search_results['entries'][0]
+            video_url = f"https://www.youtube.com/watch?v={video['id']}"
+            title = video.get('title', 'Unknown Title')
+            # 既存のBGMを停止
+            global current_bgm, is_playing_bgm
+            if current_bgm:
+                current_bgm.stop()
+            # 新しいBGMを再生
+            current_bgm = discord.FFmpegPCMAudio(video_url, executable=ffmpeg_path)
+            VC.play(current_bgm)
+            is_playing_bgm = True
+            embed = discord.Embed(
+                title="🎵 音楽再生中",
+                description=f"**{title}**",
+                color=0xFF69B4
+            )
+            embed.add_field(name="URL", value=video_url, inline=False)
+            await interaction.followup.send(embed=embed)
+        else:
+            await interaction.followup.send(f"「{query}」の検索結果が見つからなかったよ💦", ephemeral=True)
     except Exception as e:
         logger.error(f"音楽検索エラー: {e}")
         await interaction.followup.send("音楽検索でエラーが起きちゃったよ💦", ephemeral=True)
-
-# ===================== 新機能: ゲーム機能の追加 =====================
 
 @bot.tree.command(name="rps", description="じゃんけんゲームだよ♡")
 @app_commands.describe(choice="グー、チョキ、パーのどれかを選んでね")
@@ -644,6 +634,13 @@ async def on_member_join(member):
                 logger.info(f"New member joined: {member.name} (ID: {member.id})")
         except Exception as e:
             logger.error(f"Welcome message error: {e}")
+    # 自動ロール付与
+    role = discord.utils.get(member.guild.roles, name="メンバー")
+    if role:
+        try:
+            await member.add_roles(role, reason="自動ロール付与(Bot)")
+        except Exception as e:
+            logger.error(f"自動ロール付与エラー: {e}")
 
 @bot.event
 async def on_member_remove(member):
@@ -797,26 +794,127 @@ async def on_message(message):
     if message.author.bot:
         return
     
+    # NGワード検知
+    if any(word in message.content for word in NG_WORDS):
+        await message.delete()
+        await message.channel.send(f"{message.author.mention} NGワードが含まれていたので削除したよ！", delete_after=5)
+        await notify_admins(message.guild, f"NGワード検知: {message.author} ({message.author.id}) 内容: {message.content}")
+        return
+    # スパム検知
+    now = time.time()
+    uid = message.author.id
+    user_message_times.setdefault(uid, []).append(now)
+    # 直近5秒以内の発言数
+    user_message_times[uid] = [t for t in user_message_times[uid] if now-t < 5]
+    if len(user_message_times[uid]) > SPAM_THRESHOLD:
+        try:
+            await message.author.ban(reason="スパム検知(Bot自動)" )
+            await message.channel.send(f"{message.author.mention} スパム判定でBANしたよ！", delete_after=5)
+            await notify_admins(message.guild, f"スパムBAN: {message.author} ({message.author.id})")
+        except Exception as e:
+            await message.channel.send(f"BAN失敗: {e}")
+        return
     # カスタムコマンドの処理
     if message.content.startswith('!'):
         command_name = message.content[1:].split()[0]
         if command_name in custom_commands:
             await message.channel.send(custom_commands[command_name])
             return
-    
-    # 既存のメッセージ処理
     await bot.process_commands(message)
 
-# カスタムコマンドの読み込み
-try:
-    with open('custom_commands.json', 'r', encoding='utf-8') as f:
-        custom_commands = json.load(f)
-    logger.info(f"カスタムコマンドを読み込みました: {len(custom_commands)}個")
-except FileNotFoundError:
-    custom_commands = {}
-except Exception as e:
-    logger.error(f"カスタムコマンド読み込みエラー: {e}")
-    custom_commands = {}
+@bot.event
+async def on_member_join(member):
+    if WELCOME_CHANNEL_ID:
+        try:
+            channel = bot.get_channel(WELCOME_CHANNEL_ID)
+            if channel:
+                embed = discord.Embed(
+                    title="🎉 ようこそ！",
+                    description=f"{member.mention} さん、ふらんちゃんのサーバーにようこそ♡\n楽しい時間を過ごしてね〜♪",
+                    color=0xFF69B4
+                )
+                embed.set_thumbnail(url=member.avatar.url if member.avatar else member.default_avatar.url)
+                embed.add_field(name="👥 メンバー数", value=f"{member.guild.member_count}人目", inline=True)
+                embed.add_field(name="📅 参加日", value=datetime.datetime.now().strftime("%Y年%m月%d日"), inline=True)
+                await channel.send(embed=embed)
+                logger.info(f"New member joined: {member.name} (ID: {member.id})")
+        except Exception as e:
+            logger.error(f"Welcome message error: {e}")
+    # 自動ロール付与
+    role = discord.utils.get(member.guild.roles, name="メンバー")
+    if role:
+        try:
+            await member.add_roles(role, reason="自動ロール付与(Bot)")
+        except Exception as e:
+            logger.error(f"自動ロール付与エラー: {e}")
+
+@bot.tree.command(name="ban", description="ユーザーをBANするよ（管理者専用）")
+@app_commands.describe(user="BANしたいユーザー", reason="理由")
+async def ban_cmd(interaction: discord.Interaction, user: discord.Member, reason: str = "Bot管理コマンド"):
+    if not any(role.name == ADMIN_ROLE_NAME for role in interaction.user.roles):
+        await interaction.response.send_message("管理者のみ実行可能です", ephemeral=True)
+        return
+    await user.ban(reason=reason)
+    await interaction.response.send_message(f"{user} をBANしたよ！")
+
+@bot.tree.command(name="kick", description="ユーザーをKICKするよ（管理者専用）")
+@app_commands.describe(user="KICKしたいユーザー", reason="理由")
+async def kick_cmd(interaction: discord.Interaction, user: discord.Member, reason: str = "Bot管理コマンド"):
+    if not any(role.name == ADMIN_ROLE_NAME for role in interaction.user.roles):
+        await interaction.response.send_message("管理者のみ実行可能です", ephemeral=True)
+        return
+    await user.kick(reason=reason)
+    await interaction.response.send_message(f"{user} をKICKしたよ！")
+
+@bot.tree.command(name="mute", description="ユーザーをミュートするよ（管理者専用）")
+@app_commands.describe(user="ミュートしたいユーザー")
+async def mute_cmd(interaction: discord.Interaction, user: discord.Member):
+    if not any(role.name == ADMIN_ROLE_NAME for role in interaction.user.roles):
+        await interaction.response.send_message("管理者のみ実行可能です", ephemeral=True)
+        return
+    mute_role = discord.utils.get(interaction.guild.roles, name="ミュート")
+    if not mute_role:
+        mute_role = await interaction.guild.create_role(name="ミュート")
+    await user.add_roles(mute_role, reason="Bot管理コマンド")
+    await interaction.response.send_message(f"{user} をミュートしたよ！")
+
+@bot.tree.command(name="unmute", description="ユーザーのミュートを解除するよ（管理者専用）")
+@app_commands.describe(user="ミュート解除したいユーザー")
+async def unmute_cmd(interaction: discord.Interaction, user: discord.Member):
+    if not any(role.name == ADMIN_ROLE_NAME for role in interaction.user.roles):
+        await interaction.response.send_message("管理者のみ実行可能です", ephemeral=True)
+        return
+    mute_role = discord.utils.get(interaction.guild.roles, name="ミュート")
+    if mute_role:
+        await user.remove_roles(mute_role, reason="Bot管理コマンド")
+    await interaction.response.send_message(f"{user} のミュートを解除したよ！")
+
+@bot.tree.command(name="warn", description="ユーザーに警告を送るよ（管理者専用）")
+@app_commands.describe(user="警告したいユーザー", reason="理由")
+async def warn_cmd(interaction: discord.Interaction, user: discord.Member, reason: str = "ルール違反"):
+    if not any(role.name == ADMIN_ROLE_NAME for role in interaction.user.roles):
+        await interaction.response.send_message("管理者のみ実行可能です", ephemeral=True)
+        return
+    try:
+        await user.send(f"警告: {reason}")
+        await interaction.response.send_message(f"{user} に警告を送ったよ！")
+    except:
+        await interaction.response.send_message(f"{user} にDMできなかったよ…", ephemeral=True)
+
+# サーバー管理機能の拡張
+NG_WORDS = {"死ね", "バカ", "荒らし", "spamword"}
+SPAM_THRESHOLD = 5  # 5秒以内に5回以上発言でスパム判定
+user_message_times = {}
+ADMIN_ROLE_NAME = "管理者"
+AUTO_ROLE_NAME = "メンバー"
+
+async def notify_admins(guild, message):
+    for member in guild.members:
+        if any(role.name == ADMIN_ROLE_NAME for role in member.roles):
+            try:
+                await member.send(message)
+            except:
+                pass
 
 # ===================== GIF検索機能 =====================
 
@@ -910,21 +1008,42 @@ async def info(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed)
 
 @bot.tree.command(name="help", description="ふらんちゃんの使い方を教えるよ♡")
-async def help_command(interaction: Interaction):
-    fields_per_embed = 25
-    embeds = []
-    for i in range(0, len(COMMANDS_INFO), fields_per_embed):
-        embed = Embed(
-            title="ふらんちゃんBotの使い方",
-            description="以下のコマンドが使えるよ♡",
-            color=0xFF69B4
-        )
-        for name, desc in COMMANDS_INFO[i:i+fields_per_embed]:
-            embed.add_field(name=name, value=desc, inline=False)
-        embeds.append(embed)
-    await interaction.response.send_message(embed=embeds[0])
-    for embed in embeds[1:]:
-        await interaction.followup.send(embed=embed)
+@app_commands.describe(command="コマンド名（省略可）")
+@app_commands.autocomplete(command=help_autocomplete)
+async def help_command(interaction: Interaction, command: Optional[str] = None):
+    if not command:
+        # カテゴリ別一覧
+        embeds = []
+        for cat, cmds in CATEGORY_COMMANDS.items():
+            embed = Embed(title=f"{cat}コマンド一覧", color=0xFF69B4)
+            for cmd in cmds:
+                usage = cmd.get("usage", "")
+                embed.add_field(name=f"{cmd['name']}", value=f"{cmd['description']}\n例: `{usage}`", inline=False)
+            embeds.append(embed)
+        await interaction.response.send_message(embed=embeds[0])
+        for embed in embeds[1:]:
+            await interaction.followup.send(embed=embed)
+        return
+    # コマンド名またはエイリアスで検索
+    cmd = next((c for c in COMMANDS_INFO if c["name"] == command), None)
+    if not cmd:
+        # エイリアス対応
+        real_name = ALIASES.get(command)
+        if real_name:
+            cmd = next((c for c in COMMANDS_INFO if c["name"] == real_name), None)
+    if not cmd:
+        await interaction.response.send_message(f"コマンド `{command}` は見つからなかったよ💦", ephemeral=True)
+        return
+    # 詳細Embed
+    embed = Embed(title=f"{cmd['name']} の詳細ヘルプ", color=0xFF69B4)
+    embed.add_field(name="説明", value=cmd["description"], inline=False)
+    if "usage" in cmd:
+        embed.add_field(name="使い方", value=f"`{cmd['usage']}`", inline=False)
+    if "aliases" in cmd and cmd["aliases"]:
+        embed.add_field(name="エイリアス", value=", ".join(cmd["aliases"]), inline=False)
+    if "category" in cmd:
+        embed.add_field(name="カテゴリ", value=cmd["category"], inline=True)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @bot.tree.command(name="shutdown", description="ふらんちゃんをシャットダウンするよ♡")
 async def shutdown(interaction: discord.Interaction):
@@ -1217,6 +1336,28 @@ def console_loop():
                 print("バージョン: 6.3")
                 print("開発者: けんすけ")
                 
+            elif cmd == 'cpun':
+                try:
+                    import psutil
+                    cpu_percent = psutil.cpu_percent(interval=1)
+                    print(f"🖥️ CPU使用率: {cpu_percent}%")
+                except Exception as e:
+                    print(f"❌ CPU使用率取得エラー: {e}")
+            elif cmd == 'ramn':
+                try:
+                    import psutil
+                    memory = psutil.virtual_memory()
+                    print(f"💾 RAM使用率: {memory.percent}%  ({memory.used // (1024**2)}MB / {memory.total // (1024**2)}MB)")
+                except Exception as e:
+                    print(f"❌ RAM使用率取得エラー: {e}")
+            elif cmd == 'sddn':
+                try:
+                    import psutil
+                    disk = psutil.disk_usage('/')
+                    print(f"💿 ディスク使用率: {disk.percent}%  (空き: {disk.free // (1024**3)}GB / {disk.total // (1024**3)}GB)")
+                except Exception as e:
+                    print(f"❌ ディスク使用率取得エラー: {e}")
+                
             else:
                 print(f"❓ 不明なコマンド: {command}")
                 print("💡 'help' で使用可能なコマンドを確認してください")
@@ -1244,3 +1385,407 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"Bot起動エラー: {e}")
         traceback.print_exc()
+
+# プレイリストループ・シャッフル・履歴・お気に入り・フェード・SoundCloud対応
+playlist_loop = False
+playlist_shuffle = False
+playlist_history = []
+playlist_favorites = set()
+
+@bot.tree.command(name="playlist_loop", description="プレイリストのループ再生ON/OFFを切り替えるよ〜！")
+async def playlist_loop_cmd(interaction: discord.Interaction):
+    global playlist_loop
+    playlist_loop = not playlist_loop
+    await interaction.response.send_message(f"プレイリストループ: {'ON' if playlist_loop else 'OFF'}")
+
+@bot.tree.command(name="playlist_shuffle", description="プレイリストをシャッフル再生するよ〜！")
+async def playlist_shuffle_cmd(interaction: discord.Interaction):
+    global playlist_shuffle
+    playlist_shuffle = not playlist_shuffle
+    await interaction.response.send_message(f"プレイリストシャッフル: {'ON' if playlist_shuffle else 'OFF'}")
+
+@bot.tree.command(name="playlist_history", description="再生履歴を表示するよ〜！")
+async def playlist_history_cmd(interaction: discord.Interaction):
+    if not playlist_history:
+        await interaction.response.send_message("再生履歴はまだないよ！", ephemeral=True)
+        return
+    msg = '\n'.join(playlist_history[-10:])
+    await interaction.response.send_message(f"最近の再生履歴:\n{msg}")
+
+@bot.tree.command(name="playlist_favorite", description="お気に入り曲一覧を表示するよ〜！")
+async def playlist_favorite_cmd(interaction: discord.Interaction):
+    if not playlist_favorites:
+        await interaction.response.send_message("お気に入りはまだないよ！", ephemeral=True)
+        return
+    msg = '\n'.join(playlist_favorites)
+    await interaction.response.send_message(f"お気に入り曲一覧:\n{msg}")
+
+@bot.tree.command(name="playlist_favorite_add", description="お気に入りに曲を追加するよ〜！")
+@app_commands.describe(url="追加したい曲のURL")
+async def playlist_favorite_add_cmd(interaction: discord.Interaction, url: str):
+    playlist_favorites.add(url)
+    await interaction.response.send_message(f"お気に入りに追加したよ！\n{url}")
+
+@bot.tree.command(name="playlist_favorite_remove", description="お気に入りから曲を削除するよ〜！")
+@app_commands.describe(url="削除したい曲のURL")
+async def playlist_favorite_remove_cmd(interaction: discord.Interaction, url: str):
+    if url in playlist_favorites:
+        playlist_favorites.remove(url)
+        await interaction.response.send_message(f"お気に入りから削除したよ！\n{url}")
+    else:
+        await interaction.response.send_message("その曲はお気に入りに入ってないよ！", ephemeral=True)
+
+# BGMフェードイン/アウトのラッパー関数例
+async def fade_in(vc, audio, duration=3):
+    if not vc or not audio:
+        return
+    vc.play(audio)
+    for vol in range(0, 101, 10):
+        vc.source.volume = vol / 100
+        await asyncio.sleep(duration / 10)
+
+async def fade_out(vc, duration=3):
+    if not vc or not vc.source:
+        return
+    for vol in range(100, -1, -10):
+        vc.source.volume = vol / 100
+        await asyncio.sleep(duration / 10)
+    vc.stop()
+
+# SoundCloud対応の下準備
+import re
+SOUNDCLOUD_REGEX = re.compile(r"soundcloud\.com/[ -]+/")
+def is_soundcloud_url(url):
+    return bool(SOUNDCLOUD_REGEX.search(url))
+
+# ゲーム・娯楽機能の拡張
+quiz_data = [
+    {"q": "日本の首都は？", "a": "東京"},
+    {"q": "1+1は？", "a": "2"},
+    {"q": "東方Projectの主人公は？", "a": "博麗霊夢"}
+]
+quiz_current = {}
+shiritori_sessions = {}
+slot_emojis = ["🍒", "🍋", "🔔", "⭐", "7️⃣"]
+tictactoe_sessions = {}
+game_wins = {}
+
+@bot.tree.command(name="quiz", description="クイズを出題するよ！")
+async def quiz_cmd(interaction: discord.Interaction):
+    import random
+    q = random.choice(quiz_data)
+    quiz_current[interaction.user.id] = q
+    await interaction.response.send_message(f"クイズ: {q['q']}\n答えは `/quiz_answer <答え>` で送ってね！")
+
+@bot.tree.command(name="quiz_answer", description="クイズの答えを送るよ！")
+@app_commands.describe(answer="答え")
+async def quiz_answer_cmd(interaction: discord.Interaction, answer: str):
+    q = quiz_current.get(interaction.user.id)
+    if not q:
+        await interaction.response.send_message("先に `/quiz` でクイズを出してね！", ephemeral=True)
+        return
+    if answer.strip() == q['a']:
+        await interaction.response.send_message("正解だよ！すごい！")
+        game_wins.setdefault(interaction.user.id, 0)
+        game_wins[interaction.user.id] += 1
+    else:
+        await interaction.response.send_message(f"残念…正解は「{q['a']}」だよ！")
+    del quiz_current[interaction.user.id]
+
+@bot.tree.command(name="shiritori", description="しりとりを始めるよ！")
+async def shiritori_cmd(interaction: discord.Interaction):
+    shiritori_sessions[interaction.user.id] = ["しりとり"]
+    await interaction.response.send_message("しりとり開始！最初は「しりとり」から。 `/shiritori_word <単語>` で続けてね！")
+
+@bot.tree.command(name="shiritori_word", description="しりとりの単語を送るよ！")
+@app_commands.describe(word="単語")
+async def shiritori_word_cmd(interaction: discord.Interaction, word: str):
+    session = shiritori_sessions.get(interaction.user.id)
+    if not session:
+        await interaction.response.send_message("先に `/shiritori` で始めてね！", ephemeral=True)
+        return
+    last = session[-1][-1]
+    if word[0] != last:
+        await interaction.response.send_message(f"「{last}」から始まる単語にしてね！", ephemeral=True)
+        return
+    if word in session:
+        await interaction.response.send_message("同じ単語は使えないよ！", ephemeral=True)
+        return
+    session.append(word)
+    if word[-1] == "ん":
+        await interaction.response.send_message(f"「ん」で終了！あなたの負けだよ〜\n使った単語: {'→'.join(session)}")
+        del shiritori_sessions[interaction.user.id]
+    else:
+        await interaction.response.send_message(f"OK! 次は「{word[-1]}」から！\n使った単語: {'→'.join(session)}")
+
+@bot.tree.command(name="slot", description="スロットマシンで遊ぶよ！")
+async def slot_cmd(interaction: discord.Interaction):
+    import random
+    result = [random.choice(slot_emojis) for _ in range(3)]
+    msg = "|".join(result)
+    if len(set(result)) == 1:
+        await interaction.response.send_message(f"{msg}\n大当たり！+3勝利ポイント！")
+        game_wins.setdefault(interaction.user.id, 0)
+        game_wins[interaction.user.id] += 3
+    elif len(set(result)) == 2:
+        await interaction.response.send_message(f"{msg}\n惜しい！+1勝利ポイント！")
+        game_wins.setdefault(interaction.user.id, 0)
+        game_wins[interaction.user.id] += 1
+    else:
+        await interaction.response.send_message(f"{msg}\n残念…また挑戦してね！")
+
+@bot.tree.command(name="tictactoe", description="○×ゲームを始めるよ！（2人用）")
+@app_commands.describe(opponent="対戦相手")
+async def tictactoe_cmd(interaction: discord.Interaction, opponent: discord.Member):
+    tictactoe_sessions[(interaction.user.id, opponent.id)] = {"board": [" "]*9, "turn": interaction.user.id}
+    await interaction.response.send_message(f"○×ゲーム開始！ {interaction.user.display_name} vs {opponent.display_name}\n`/tictactoe_move <0-8>` でマスを指定してね！")
+
+@bot.tree.command(name="tictactoe_move", description="○×ゲームのマスを指定するよ！")
+@app_commands.describe(pos="マス番号(0-8)")
+async def tictactoe_move_cmd(interaction: discord.Interaction, pos: int):
+    for key, session in tictactoe_sessions.items():
+        if interaction.user.id in key:
+            board = session["board"]
+            turn = session["turn"]
+            if interaction.user.id != turn:
+                await interaction.response.send_message("今はあなたの番じゃないよ！", ephemeral=True)
+                return
+            if not (0 <= pos < 9) or board[pos] != " ":
+                await interaction.response.send_message("そのマスは選べないよ！", ephemeral=True)
+                return
+            mark = "○" if turn == key[0] else "×"
+            board[pos] = mark
+            session["turn"] = key[1] if turn == key[0] else key[0]
+            b = board
+            board_str = f"{b[0]}|{b[1]}|{b[2]}\n-+-+-\n{b[3]}|{b[4]}|{b[5]}\n-+-+-\n{b[6]}|{b[7]}|{b[8]}"
+            # 勝敗判定
+            wins = [(0,1,2),(3,4,5),(6,7,8),(0,3,6),(1,4,7),(2,5,8),(0,4,8),(2,4,6)]
+            for a,b,c in wins:
+                if board[a] == board[b] == board[c] != " ":
+                    await interaction.response.send_message(f"{board_str}\n{mark}の勝ち！")
+                    game_wins.setdefault(interaction.user.id, 0)
+                    game_wins[interaction.user.id] += 2
+                    del tictactoe_sessions[key]
+                    return
+            if all(x != " " for x in board):
+                await interaction.response.send_message(f"{board_str}\n引き分け！")
+                del tictactoe_sessions[key]
+                return
+            await interaction.response.send_message(f"{board_str}\n次の番！")
+            return
+    await interaction.response.send_message("進行中の○×ゲームがないよ！", ephemeral=True)
+
+@bot.tree.command(name="ranking", description="ゲームの勝利数ランキングを表示するよ！")
+async def ranking_cmd(interaction: discord.Interaction):
+    if not game_wins:
+        await interaction.response.send_message("まだ勝利記録がないよ！", ephemeral=True)
+        return
+    sorted_wins = sorted(game_wins.items(), key=lambda x: x[1], reverse=True)
+    msg = "\n".join([f"<@{uid}>: {win}勝" for uid, win in sorted_wins[:10]])
+    await interaction.response.send_message(f"�� 勝利数ランキング\n{msg}")
+
+# 通知・リマインダー機能の拡張
+reminders = {}
+daily_reminders = {}
+weekly_reminders = {}
+calendar_events = {}
+birthdays = {}
+
+@bot.tree.command(name="remind", description="指定時間後にリマインドするよ！")
+@app_commands.describe(message="リマインドメッセージ", minutes="何分後（デフォルト: 60）")
+async def remind_cmd(interaction: discord.Interaction, message: str, minutes: int = 60):
+    user_id = interaction.user.id
+    reminder_time = datetime.datetime.now() + datetime.timedelta(minutes=minutes)
+    reminders[user_id] = {"message": message, "time": reminder_time, "channel": interaction.channel.id}
+    await interaction.response.send_message(f"{minutes}分後に「{message}」をリマインドするよ！")
+
+@bot.tree.command(name="remind_daily", description="毎日のリマインドを設定するよ！")
+@app_commands.describe(message="リマインドメッセージ", hour="何時（0-23）", minute="何分（0-59）")
+async def remind_daily_cmd(interaction: discord.Interaction, message: str, hour: int = 9, minute: int = 0):
+    user_id = interaction.user.id
+    daily_reminders[user_id] = {"message": message, "hour": hour, "minute": minute, "channel": interaction.channel.id}
+    await interaction.response.send_message(f"毎日{hour}時{minute}分に「{message}」をリマインドするよ！")
+
+@bot.tree.command(name="remind_weekly", description="毎週のリマインドを設定するよ！")
+@app_commands.describe(message="リマインドメッセージ", weekday="曜日（0=月曜日〜6=日曜日）", hour="何時（0-23）", minute="何分（0-59）")
+async def remind_weekly_cmd(interaction: discord.Interaction, message: str, weekday: int = 0, hour: int = 9, minute: int = 0):
+    user_id = interaction.user.id
+    weekly_reminders[user_id] = {"message": message, "weekday": weekday, "hour": hour, "minute": minute, "channel": interaction.channel.id}
+    weekdays = ["月曜日", "火曜日", "水曜日", "木曜日", "金曜日", "土曜日", "日曜日"]
+    await interaction.response.send_message(f"毎週{weekdays[weekday]}{hour}時{minute}分に「{message}」をリマインドするよ！")
+
+@bot.tree.command(name="calendar_add", description="カレンダーにイベントを追加するよ！")
+@app_commands.describe(title="イベントタイトル", date="日付（YYYY-MM-DD）", time="時間（HH:MM）", description="説明")
+async def calendar_add_cmd(interaction: discord.Interaction, title: str, date: str, time: str = "00:00", description: str = ""):
+    event_id = len(calendar_events) + 1
+    calendar_events[event_id] = {
+        "title": title,
+        "date": date,
+        "time": time,
+        "description": description,
+        "user": interaction.user.id
+    }
+    await interaction.response.send_message(f"イベント「{title}」を{date} {time}に追加したよ！")
+
+@bot.tree.command(name="calendar_show", description="カレンダーのイベント一覧を表示するよ！")
+async def calendar_show_cmd(interaction: discord.Interaction):
+    if not calendar_events:
+        await interaction.response.send_message("イベントはまだないよ！", ephemeral=True)
+        return
+    msg = "\n".join([f"{eid}: {event['title']} ({event['date']} {event['time']})" for eid, event in calendar_events.items()])
+    await interaction.response.send_message(f"📅 イベント一覧\n{msg}")
+
+@bot.tree.command(name="birthday_add", description="誕生日を登録するよ！")
+@app_commands.describe(name="名前", month="月（1-12）", day="日（1-31）")
+async def birthday_add_cmd(interaction: discord.Interaction, name: str, month: int, day: int):
+    user_id = interaction.user.id
+    birthdays[user_id] = {"name": name, "month": month, "day": day}
+    await interaction.response.send_message(f"{name}の誕生日を{month}月{day}日に登録したよ！")
+
+@bot.tree.command(name="birthday_show", description="誕生日一覧を表示するよ！")
+async def birthday_show_cmd(interaction: discord.Interaction):
+    if not birthdays:
+        await interaction.response.send_message("誕生日はまだ登録されてないよ！", ephemeral=True)
+        return
+    msg = "\n".join([f"{data['name']}: {data['month']}月{data['day']}日" for data in birthdays.values()])
+    await interaction.response.send_message(f"🎂 誕生日一覧\n{msg}")
+
+# 自動通知システム
+@tasks.loop(minutes=1)
+async def check_reminders():
+    now = datetime.datetime.now()
+    # 通常リマインド
+    for user_id, reminder in list(reminders.items()):
+        if now >= reminder["time"]:
+            channel = bot.get_channel(reminder["channel"])
+            try:
+                if channel:
+                    await channel.send(f"<@{user_id}> リマインド: {reminder['message']}")
+            except Exception as e:
+                logger.error(f"リマインド送信失敗: {e}")
+            del reminders[user_id]
+    # 毎日リマインド
+    for user_id, reminder in daily_reminders.items():
+        try:
+            if now.hour == reminder["hour"] and now.minute == reminder["minute"]:
+                channel = bot.get_channel(reminder["channel"])
+                if channel:
+                    await channel.send(f"<@{user_id}> 毎日リマインド: {reminder['message']}")
+        except Exception as e:
+            logger.error(f"毎日リマインド送信失敗: {e}")
+    # 毎週リマインド
+    for user_id, reminder in weekly_reminders.items():
+        try:
+            if now.weekday() == reminder["weekday"] and now.hour == reminder["hour"] and now.minute == reminder["minute"]:
+                channel = bot.get_channel(reminder["channel"])
+                if channel:
+                    await channel.send(f"<@{user_id}> 毎週リマインド: {reminder['message']}")
+        except Exception as e:
+            logger.error(f"毎週リマインド送信失敗: {e}")
+    # 誕生日通知
+    for user_id, birthday in birthdays.items():
+        try:
+            if now.month == birthday["month"] and now.day == birthday["day"] and now.hour == 9 and now.minute == 0:
+                # 全チャンネルに通知
+                for guild in bot.guilds:
+                    for channel in guild.text_channels:
+                        try:
+                            await channel.send(f"🎂 今日は{birthday['name']}の誕生日だよ！おめでとう！")
+                            break
+                        except Exception as e:
+                            logger.error(f"誕生日通知送信失敗: {e}")
+                            continue
+        except Exception as e:
+            logger.error(f"誕生日通知全体でエラー: {e}")
+
+# ===================== リソース監視・自動再起動 =====================
+OWNER_ID = int(os.getenv("OWNER_ID", "0"))
+RESOURCE_ALERT_CHANNEL_ID = os.getenv("RESOURCE_ALERT_CHANNEL_ID")
+
+@tasks.loop(minutes=1)
+async def monitor_resources():
+    process = psutil.Process(os.getpid())
+    mem = process.memory_info().rss / (1024 * 1024)  # MB
+    cpu = process.cpu_percent(interval=1)
+    total_mem = psutil.virtual_memory().percent
+    total_cpu = psutil.cpu_percent(interval=1)
+    alert = False
+    alert_msg = ""
+    if total_mem > 90 or total_cpu > 80:
+        alert = True
+        alert_msg = f"⚠️ リソース異常検知！\nメモリ: {total_mem:.1f}%\nCPU: {total_cpu:.1f}%\n自動再起動します。"
+    elif mem > 500 or cpu > 80:
+        alert = True
+        alert_msg = f"⚠️ Botプロセスのリソース異常！\nメモリ: {mem:.1f}MB\nCPU: {cpu:.1f}%\n自動再起動します。"
+    if alert:
+        # 管理者通知
+        try:
+            owner = bot.get_user(OWNER_ID)
+            if owner:
+                await owner.send(alert_msg)
+            if RESOURCE_ALERT_CHANNEL_ID:
+                channel = bot.get_channel(int(RESOURCE_ALERT_CHANNEL_ID))
+                if channel:
+                    await channel.send(alert_msg)
+        except Exception as e:
+            logger.error(f"リソース異常通知失敗: {e}")
+        # 自動再起動
+        try:
+            await asyncio.sleep(3)
+            os.execl(sys.executable, sys.executable, *sys.argv)
+        except Exception as e:
+            logger.error(f"自動再起動失敗: {e}")
+
+# Bot起動時に監視タスク開始
+def start_background_tasks():
+    check_reminders.start()
+    monitor_resources.start()
+
+@bot.event
+def on_ready():
+    start_background_tasks()
+    # ... 既存のon_ready処理 ...
+
+async def notify_admin_error(msg):
+    try:
+        owner = bot.get_user(OWNER_ID)
+        if owner:
+            await owner.send(msg)
+        if RESOURCE_ALERT_CHANNEL_ID:
+            channel = bot.get_channel(int(RESOURCE_ALERT_CHANNEL_ID))
+            if channel:
+                await channel.send(msg)
+    except Exception as e:
+        logger.error(f"管理者通知失敗: {e}")
+
+@bot.event
+async def on_error(event, *args, **kwargs):
+    import traceback
+    err = traceback.format_exc()
+    logger.error(f"on_error: {event}\n{err}")
+    await notify_admin_error(f"【Botエラー】\nイベント: {event}\n```\n{err}\n```")
+
+@bot.event
+async def on_command_error(ctx, error):
+    logger.error(f"on_command_error: {error}")
+    await notify_admin_error(f"【コマンドエラー】\n{error}")
+
+@bot.event
+async def on_application_command_error(interaction, error):
+    logger.error(f"on_app_command_error: {error}")
+    await notify_admin_error(f"【スラッシュコマンドエラー】\n{error}")
+
+# 起動・再起動・シャットダウン時の通知
+async def notify_startup():
+    await notify_admin_error("✅ ふらんちゃんBotが起動しました！")
+async def notify_shutdown():
+    await notify_admin_error("🛑 ふらんちゃんBotがシャットダウンしました。")
+
+@bot.event
+async def on_ready():
+    start_background_tasks()
+    await notify_startup()
+    # ... 既存のon_ready処理 ...
+
+# シャットダウンコマンド内で
+# await notify_shutdown() を呼ぶようにしてください

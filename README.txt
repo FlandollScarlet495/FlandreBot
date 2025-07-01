@@ -44,6 +44,16 @@ AIチャット、画像生成、多言語翻訳まで色んなことができる
 ・/bgm           テキストチャンネルでBGM再生
 ・/bgm_stop      テキストチャンネルのBGM停止
 
+● BGM・音楽機能（拡張）
+・/playlist_loop         プレイリストのループ再生ON/OFF
+・/playlist_shuffle      プレイリストをシャッフル再生
+・/playlist_history      再生履歴を表示
+・/playlist_favorite     お気に入り曲一覧を表示
+・/playlist_favorite_add お気に入りに曲を追加
+・/playlist_favorite_remove お気に入りから曲を削除
+・BGMフェードイン/アウト対応
+・SoundCloud対応の下準備
+
 ● プレイリスト機能
 ・/playlist_create   プレイリスト作成
 ・/playlist_add      プレイリストに曲を追加
@@ -213,3 +223,36 @@ MITライセンス（改変・再配布OK！）
 TRPG勢も、雑談鯖も、みーんなに使ってほしいよ！
 
 ―― From ふらんちゃん
+
+● サーバー管理機能（拡張）
+・NGワード検知・自動削除
+・スパム検知・自動BAN/KICK
+・メンバー入退室ログ強化
+・自動ロール付与
+・/ban         ユーザーをBAN（管理者専用）
+・/kick        ユーザーをKICK（管理者専用）
+・/mute        ユーザーをミュート（管理者専用）
+・/unmute      ユーザーのミュート解除（管理者専用）
+・/warn        ユーザーに警告（管理者専用）
+・違反時の管理者通知
+
+● ゲーム・娯楽機能（拡張）
+・/quiz           クイズを出題
+・/quiz_answer    クイズの答えを送信
+・/shiritori      しりとり開始
+・/shiritori_word しりとり単語送信
+・/slot           スロットマシン
+・/tictactoe      ○×ゲーム（2人用）
+・/tictactoe_move ○×ゲームのマス指定
+・/ranking        勝利数ランキング
+・TRPG支援コマンド強化
+
+● 通知・リマインダー機能（拡張）
+・/remind          指定時間後にリマインド
+・/remind_daily    毎日のリマインド設定
+・/remind_weekly   毎週のリマインド設定
+・/calendar_add    カレンダーにイベント追加
+・/calendar_show   イベント一覧表示
+・/birthday_add    誕生日登録
+・/birthday_show   誕生日一覧表示
+・自動通知システム

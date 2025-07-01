@@ -161,6 +161,188 @@
       "usage": "/gif <keyword>",
       "description": "GIFを検索するよ♡",
       "type": "gif"
+    },
+    {
+      "name": "/playlist_loop",
+      "aliases": ["/playlist_loop", "playlist_loop"],
+      "usage": "/playlist_loop",
+      "description": "プレイリストのループ再生ON/OFFを切り替えるよ〜！",
+      "type": "playlist_loop"
+    },
+    {
+      "name": "/playlist_shuffle",
+      "aliases": ["/playlist_shuffle", "playlist_shuffle"],
+      "usage": "/playlist_shuffle",
+      "description": "プレイリストをシャッフル再生するよ〜！",
+      "type": "playlist_shuffle"
+    },
+    {
+      "name": "/playlist_history",
+      "aliases": ["/playlist_history", "playlist_history"],
+      "usage": "/playlist_history",
+      "description": "再生履歴を表示するよ〜！",
+      "type": "playlist_history"
+    },
+    {
+      "name": "/playlist_favorite",
+      "aliases": ["/playlist_favorite", "playlist_favorite"],
+      "usage": "/playlist_favorite",
+      "description": "お気に入り曲一覧を表示するよ〜！",
+      "type": "playlist_favorite"
+    },
+    {
+      "name": "/playlist_favorite_add",
+      "aliases": ["/playlist_favorite_add", "playlist_favorite_add"],
+      "usage": "/playlist_favorite_add <url>",
+      "description": "お気に入りに曲を追加するよ〜！",
+      "type": "playlist_favorite_add"
+    },
+    {
+      "name": "/playlist_favorite_remove",
+      "aliases": ["/playlist_favorite_remove", "playlist_favorite_remove"],
+      "usage": "/playlist_favorite_remove <url>",
+      "description": "お気に入りから曲を削除するよ〜！",
+      "type": "playlist_favorite_remove"
+    },
+    {
+      "name": "/ban",
+      "aliases": ["/ban", "ban"],
+      "usage": "/ban <user> <reason>",
+      "description": "ユーザーをBANするよ（管理者専用）",
+      "type": "ban"
+    },
+    {
+      "name": "/kick",
+      "aliases": ["/kick", "kick"],
+      "usage": "/kick <user> <reason>",
+      "description": "ユーザーをKICKするよ（管理者専用）",
+      "type": "kick"
+    },
+    {
+      "name": "/mute",
+      "aliases": ["/mute", "mute"],
+      "usage": "/mute <user>",
+      "description": "ユーザーをミュートするよ（管理者専用）",
+      "type": "mute"
+    },
+    {
+      "name": "/unmute",
+      "aliases": ["/unmute", "unmute"],
+      "usage": "/unmute <user>",
+      "description": "ユーザーのミュートを解除するよ（管理者専用）",
+      "type": "unmute"
+    },
+    {
+      "name": "/warn",
+      "aliases": ["/warn", "warn"],
+      "usage": "/warn <user> <reason>",
+      "description": "ユーザーに警告を送るよ（管理者専用）",
+      "type": "warn"
+    },
+    {
+      "name": "/quiz",
+      "aliases": ["/quiz", "quiz"],
+      "usage": "/quiz",
+      "description": "クイズを出題するよ！",
+      "type": "quiz"
+    },
+    {
+      "name": "/quiz_answer",
+      "aliases": ["/quiz_answer", "quiz_answer"],
+      "usage": "/quiz_answer <answer>",
+      "description": "クイズの答えを送るよ！",
+      "type": "quiz_answer"
+    },
+    {
+      "name": "/shiritori",
+      "aliases": ["/shiritori", "shiritori"],
+      "usage": "/shiritori",
+      "description": "しりとりを始めるよ！",
+      "type": "shiritori"
+    },
+    {
+      "name": "/shiritori_word",
+      "aliases": ["/shiritori_word", "shiritori_word"],
+      "usage": "/shiritori_word <word>",
+      "description": "しりとりの単語を送るよ！",
+      "type": "shiritori_word"
+    },
+    {
+      "name": "/slot",
+      "aliases": ["/slot", "slot"],
+      "usage": "/slot",
+      "description": "スロットマシンで遊ぶよ！",
+      "type": "slot"
+    },
+    {
+      "name": "/tictactoe",
+      "aliases": ["/tictactoe", "tictactoe"],
+      "usage": "/tictactoe <opponent>",
+      "description": "○×ゲームを始めるよ！（2人用）",
+      "type": "tictactoe"
+    },
+    {
+      "name": "/tictactoe_move",
+      "aliases": ["/tictactoe_move", "tictactoe_move"],
+      "usage": "/tictactoe_move <pos>",
+      "description": "○×ゲームのマスを指定するよ！",
+      "type": "tictactoe_move"
+    },
+    {
+      "name": "/ranking",
+      "aliases": ["/ranking", "ranking"],
+      "usage": "/ranking",
+      "description": "ゲームの勝利数ランキングを表示するよ！",
+      "type": "ranking"
+    },
+    {
+      "name": "/remind",
+      "aliases": ["/remind", "remind"],
+      "usage": "/remind <message> <minutes>",
+      "description": "指定時間後にリマインドするよ！",
+      "type": "remind"
+    },
+    {
+      "name": "/remind_daily",
+      "aliases": ["/remind_daily", "remind_daily"],
+      "usage": "/remind_daily <message> <hour> <minute>",
+      "description": "毎日のリマインドを設定するよ！",
+      "type": "remind_daily"
+    },
+    {
+      "name": "/remind_weekly",
+      "aliases": ["/remind_weekly", "remind_weekly"],
+      "usage": "/remind_weekly <message> <weekday> <hour> <minute>",
+      "description": "毎週のリマインドを設定するよ！",
+      "type": "remind_weekly"
+    },
+    {
+      "name": "/calendar_add",
+      "aliases": ["/calendar_add", "calendar_add"],
+      "usage": "/calendar_add <title> <date> <time> <description>",
+      "description": "カレンダーにイベントを追加するよ！",
+      "type": "calendar_add"
+    },
+    {
+      "name": "/calendar_show",
+      "aliases": ["/calendar_show", "calendar_show"],
+      "usage": "/calendar_show",
+      "description": "カレンダーのイベント一覧を表示するよ！",
+      "type": "calendar_show"
+    },
+    {
+      "name": "/birthday_add",
+      "aliases": ["/birthday_add", "birthday_add"],
+      "usage": "/birthday_add <name> <month> <day>",
+      "description": "誕生日を登録するよ！",
+      "type": "birthday_add"
+    },
+    {
+      "name": "/birthday_show",
+      "aliases": ["/birthday_show", "birthday_show"],
+      "usage": "/birthday_show",
+      "description": "誕生日一覧を表示するよ！",
+      "type": "birthday_show"
     }
   ]
 }
