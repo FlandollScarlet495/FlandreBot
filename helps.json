@@ -113,6 +113,18 @@
     {"name": "/calendar_add", "description": "カレンダーにイベントを追加するよ！", "usage": "/calendar_add 誕生日会 2024-07-01 18:00", "aliases": [], "category": "通知"},
     {"name": "/calendar_show", "description": "カレンダーのイベント一覧を表示するよ！"},
     {"name": "/birthday_add", "description": "誕生日を登録するよ！", "usage": "/birthday_add ふらん 7 1", "aliases": [], "category": "通知"},
-    {"name": "/birthday_show", "description": "誕生日一覧を表示するよ！"}
+    {"name": "/birthday_show", "description": "誕生日一覧を表示するよ！"},
+    {"name": "/weather", "description": "天気予報を取得するよ♡", "usage": "/weather Tokyo", "aliases": ["/tenki"], "category": "情報"},
+    {"name": "/currency", "description": "通貨を換算するよ♡", "usage": "/currency 100 USD JPY", "aliases": ["/kawase"], "category": "情報"},
+    {"name": "/memo_save", "description": "メモを保存するよ♡", "usage": "/memo_save 買い物 牛乳", "aliases": [], "category": "ユーティリティ"},
+    {"name": "/memo_list", "description": "メモ一覧を表示するよ♡", "usage": "/memo_list", "aliases": [], "category": "ユーティリティ"},
+    {"name": "/memo_delete", "description": "メモを削除するよ♡", "usage": "/memo_delete 買い物", "aliases": [], "category": "ユーティリティ"},
+    {"name": "/poll", "description": "投票を作成するよ♡", "usage": "/poll 何を食べる？ ラーメン,カレー,うどん", "aliases": ["/touhyou"], "category": "ユーティリティ"},
+    {"name": "/vote", "description": "投票に参加するよ♡", "usage": "/vote <投票ID> 1", "aliases": [], "category": "ユーティリティ"},
+    {"name": "/poll_result", "description": "投票結果を表示するよ♡", "usage": "/poll_result <投票ID>", "aliases": [], "category": "ユーティリティ"},
+    {"name": "/auto_response_add", "description": "自動応答を追加するよ♡（管理者専用）", "usage": "/auto_response_add こんにちは こんにちは♡", "aliases": [], "category": "管理"},
+    {"name": "/auto_response_list", "description": "自動応答一覧を表示するよ♡", "usage": "/auto_response_list", "aliases": [], "category": "管理"},
+    {"name": "/level", "description": "自分のレベルを確認するよ♡", "usage": "/level", "aliases": ["/reberu"], "category": "ゲーム"},
+    {"name": "/leaderboard", "description": "レベルランキングを表示するよ♡", "usage": "/leaderboard", "aliases": ["/ranking"], "category": "ゲーム"}
   ]
 }
